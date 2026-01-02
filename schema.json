@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/aliou/preview-markdown/main/schema.json",
+  "title": "pmd configuration",
+  "description": "Configuration file for pmd (preview-markdown)",
+  "type": "object",
+  "properties": {
+    "showLineNumbers": {
+      "type": "boolean",
+      "description": "Show line numbers in the pager",
+      "default": false
+    },
+    "theme": {
+      "description": "Theme configuration - either a single theme name or separate dark/light themes",
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "Theme name to use for both light and dark mode"
+        },
+        {
+          "type": "object",
+          "description": "Separate themes for dark and light mode",
+          "properties": {
+            "dark": {
+              "type": "string",
+              "description": "Theme name for dark mode",
+              "default": "jellybeans-dark"
+            },
+            "light": {
+              "type": "string",
+              "description": "Theme name for light mode",
+              "default": "jellybeans-light"
+            }
+          },
+          "required": ["dark", "light"],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}

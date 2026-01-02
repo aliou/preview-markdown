@@ -1,0 +1,135 @@
+diff --git a/dist/components/markdown.js b/dist/components/markdown.js
+index f9f2eab3b93a4dc935ecd7858fa05184913ce036..8e7640c348b5725ee0e8dc144afaed4c4dc8381e 100644
+--- a/dist/components/markdown.js
++++ b/dist/components/markdown.js
+@@ -1,5 +1,16 @@
+ import { marked } from "marked";
+ import { applyBackgroundToLine, visibleWidth, wrapTextWithAnsi } from "../utils.js";
++
++// Box drawing characters for code blocks
++const BOX_CHARS = {
++    topLeft: "╭",
++    topRight: "╮",
++    bottomLeft: "╰",
++    bottomRight: "╯",
++    horizontal: "─",
++    vertical: "│",
++};
++
+ export class Markdown {
+     text;
+     paddingX; // Left/right padding
+@@ -150,6 +161,64 @@ export class Markdown {
+         this.defaultStylePrefix = sentinelIndex >= 0 ? styled.slice(0, sentinelIndex) : "";
+         return this.defaultStylePrefix;
+     }
++    /**
++     * Render a code block with a box border and language label.
++     */
++    renderCodeBlock(code, lang, availableWidth) {
++        const lines = [];
++        const borderStyle = this.theme.codeBlockBorder;
++        
++        // Get highlighted or plain code lines
++        let codeLines;
++        if (this.theme.highlightCode) {
++            codeLines = this.theme.highlightCode(code, lang);
++        } else {
++            codeLines = code.split("\n").map(line => this.theme.codeBlock(line));
++        }
++        
++        // Calculate the maximum line width (visible characters only)
++        let maxLineWidth = 0;
++        for (const line of codeLines) {
++            const lineWidth = visibleWidth(line);
++            if (lineWidth > maxLineWidth) {
++                maxLineWidth = lineWidth;
++            }
++        }
++        
++        // Box inner width: max of (longest line + padding, lang label + padding)
++        // We add 2 for left/right padding inside the box
++        const langLabel = lang || "";
++        const minWidthForLabel = langLabel.length + 4; // "─ lang ─"
++        const innerWidth = Math.max(maxLineWidth + 2, minWidthForLabel);
++        
++        // Build top border with language label
++        // Format: ╭─ lang ────────────────╮
++        let topBorder;
++        if (langLabel) {
++            const labelPart = `${BOX_CHARS.horizontal} ${langLabel} `;
++            const remainingWidth = innerWidth - labelPart.length;
++            topBorder = BOX_CHARS.topLeft + labelPart + BOX_CHARS.horizontal.repeat(Math.max(0, remainingWidth)) + BOX_CHARS.topRight;
++        } else {
++            topBorder = BOX_CHARS.topLeft + BOX_CHARS.horizontal.repeat(innerWidth) + BOX_CHARS.topRight;
++        }
++        lines.push(borderStyle(topBorder));
++        
++        // Render each code line with side borders
++        // Format: │ code                  │
++        for (const codeLine of codeLines) {
++            const lineWidth = visibleWidth(codeLine);
++            const padding = " ".repeat(Math.max(0, innerWidth - lineWidth - 1));
++            const line = borderStyle(BOX_CHARS.vertical) + " " + codeLine + padding + borderStyle(BOX_CHARS.vertical);
++            lines.push(line);
++        }
++        
++        // Build bottom border
++        // Format: ╰────────────────────────╯
++        const bottomBorder = BOX_CHARS.bottomLeft + BOX_CHARS.horizontal.repeat(innerWidth) + BOX_CHARS.bottomRight;
++        lines.push(borderStyle(bottomBorder));
++        
++        return lines;
++    }
+     renderToken(token, width, nextTokenType) {
+         const lines = [];
+         switch (token.type) {
+@@ -183,21 +252,8 @@ export class Markdown {
+                 break;
+             }
+             case "code": {
+-                lines.push(this.theme.codeBlockBorder(`\`\`\`${token.lang || ""}`));
+-                if (this.theme.highlightCode) {
+-                    const highlightedLines = this.theme.highlightCode(token.text, token.lang);
+-                    for (const hlLine of highlightedLines) {
+-                        lines.push(`  ${hlLine}`);
+-                    }
+-                }
+-                else {
+-                    // Split code by newlines and style each line
+-                    const codeLines = token.text.split("\n");
+-                    for (const codeLine of codeLines) {
+-                        lines.push(`  ${this.theme.codeBlock(codeLine)}`);
+-                    }
+-                }
+-                lines.push(this.theme.codeBlockBorder("```"));
++                const codeBlockLines = this.renderCodeBlock(token.text, token.lang, width);
++                lines.push(...codeBlockLines);
+                 if (nextTokenType !== "space") {
+                     lines.push(""); // Add spacing after code blocks (unless space token follows)
+                 }
+@@ -386,21 +442,9 @@ export class Markdown {
+                 lines.push(text);
+             }
+             else if (token.type === "code") {
+-                // Code block in list item
+-                lines.push(this.theme.codeBlockBorder(`\`\`\`${token.lang || ""}`));
+-                if (this.theme.highlightCode) {
+-                    const highlightedLines = this.theme.highlightCode(token.text, token.lang);
+-                    for (const hlLine of highlightedLines) {
+-                        lines.push(`  ${hlLine}`);
+-                    }
+-                }
+-                else {
+-                    const codeLines = token.text.split("\n");
+-                    for (const codeLine of codeLines) {
+-                        lines.push(`  ${this.theme.codeBlock(codeLine)}`);
+-                    }
+-                }
+-                lines.push(this.theme.codeBlockBorder("```"));
++                // Code block in list item - use boxed rendering
++                const codeBlockLines = this.renderCodeBlock(token.text, token.lang, 80);
++                lines.push(...codeBlockLines);
+             }
+             else {
+                 // Other token types - try to render as inline

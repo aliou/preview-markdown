@@ -1,0 +1,7 @@
+{
+  "$schema": "https://raw.githubusercontent.com/aliou/preview-markdown/main/schema.json",
+  "theme": {
+    "dark": "jellybeans-dark",
+    "light": "jellybeans-light"
+  }
+}
