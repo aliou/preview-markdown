@@ -92,14 +92,29 @@ jobs:
           
           echo "Releasing ${TAG}..."
           
-          # Configure git for tagging
+          # Configure git
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
           # Build binaries
           bun run build
           
-          # Create tag and release
+          # Compute hashes
+          DARWIN_HASH=$(nix hash file --sri dist/pmd-darwin-arm64)
+          LINUX_HASH=$(nix hash file --sri dist/pmd-linux-arm64)
+          echo "Darwin hash: $DARWIN_HASH"
+          echo "Linux hash: $LINUX_HASH"
+          
+          # Update flake.nix with correct hashes
+          sed -i "s|hash = \"sha256-.*\"; # darwin|hash = \"${DARWIN_HASH}\"; # darwin|" flake.nix
+          sed -i "s|hash = \"sha256-.*\"; # linux|hash = \"${LINUX_HASH}\"; # linux|" flake.nix
+          
+          # Commit hash update
+          git add flake.nix
+          git commit -m "chore: update binary hashes for ${TAG}"
+          git push origin main
+          
+          # Create tag on the new commit and release
           git tag -a "${TAG}" -m "Release ${TAG}"
           git push origin "${TAG}"
           
