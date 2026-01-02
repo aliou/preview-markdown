@@ -20,11 +20,11 @@
       binaries = {
         "aarch64-darwin" = {
           url = "https://github.com/aliou/preview-markdown/releases/download/v${version}/pmd-darwin-arm64";
-          hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+          hash = "sha256-o92Eh1DhjCunP1zuWcHS8/0w9nOKbjlTtK7T4L6fqQk=";
         };
         "aarch64-linux" = {
           url = "https://github.com/aliou/preview-markdown/releases/download/v${version}/pmd-linux-arm64";
-          hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+          hash = "sha256-oGqZOpzgfxXgqCTPv5ZvkkedMQ3kxHZaIJiXOG6Hi7Y=";
         };
       };
 
