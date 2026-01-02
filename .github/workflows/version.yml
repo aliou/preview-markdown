@@ -106,7 +106,7 @@ jobs:
           gh release create "${TAG}" \
             --title "${TAG}" \
             --generate-notes \
-            dist/mdp-darwin-arm64 \
-            dist/mdp-linux-arm64
+            dist/pmd-darwin-arm64 \
+            dist/pmd-linux-arm64
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
