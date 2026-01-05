@@ -1,0 +1,45 @@
+import { Button } from './components/Button'
+import { Alert } from './components/Alert'
+export const metadata = { title: 'MDX Documentation' }
+
+# MDX Documentation
+
+This is an MDX file that mixes markdown with React components.
+
+## Regular Markdown
+
+Here's some normal markdown content with **bold** and *italic* text.
+
+## Interactive Components
+
+<Button onClick={() => console.log('clicked!')}>
+  Click Me
+</Button>
+
+Some text between components.
+
+<Alert type="warning">
+  This is a warning message that spans
+  multiple lines in the JSX.
+</Alert>
+
+## Self-Closing Components
+
+<Divider />
+
+<Spacer height={24} />
+
+## Code Block
+
+```tsx
+function Example() {
+  return <div>Hello</div>;
+}
+```
+
+## More Content
+
+Regular paragraph after all the components.
+
+- List item one
+- List item two
