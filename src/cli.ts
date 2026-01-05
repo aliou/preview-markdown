@@ -8,7 +8,7 @@ export interface CliOptions {
   dark: boolean;
   noPager: boolean;
   lineNumbers: boolean;
-  width: number | null;
+  width: number;
   completion: string | null;
   file: string | null;
 }
@@ -24,7 +24,7 @@ export function parseArgs(args: string[]): CliOptions {
     dark: false,
     noPager: false,
     lineNumbers: false,
-    width: null,
+    width: 100,
     completion: null,
     file: null,
   };
@@ -98,7 +98,7 @@ ${bold("Flags:")}
       --light           force light mode
       --dark            force dark mode
   -v, --version         version for ${APP_NAME}
-  -w, --width uint      word-wrap at width ${dim("(set to 0 to disable)")}
+  -w, --width uint      word-wrap at width ${dim("(default: 100, 0 to disable)")}
 
 ${bold("Navigation (in pager):")}
   j, Down               Scroll down

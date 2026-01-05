@@ -56,6 +56,7 @@ export interface PagerOptions {
   onSuspend?: () => void;
   onColorSchemeChange?: (scheme: ColorScheme) => void;
   showLineNumbers?: boolean;
+  wrapWidth?: number;
   bgColor?: (text: string) => string;
   fgColor?: (text: string) => string;
   helpBgColor?: (text: string) => string;
@@ -72,6 +73,7 @@ export class Pager implements Component {
   private onSuspend?: () => void;
   private onColorSchemeChange?: (scheme: ColorScheme) => void;
   private showLineNumbers: boolean;
+  private wrapWidth: number;
   private scrollOffset = 0;
   private cachedLines: string[] = [];
   private cachedWidth = 0;
@@ -98,6 +100,7 @@ export class Pager implements Component {
     this.onSuspend = options.onSuspend;
     this.onColorSchemeChange = options.onColorSchemeChange;
     this.showLineNumbers = options.showLineNumbers ?? false;
+    this.wrapWidth = options.wrapWidth ?? 0;
     this.bgColor = options.bgColor ?? ((t) => t);
     this.fgColor = options.fgColor ?? ((t) => t);
     this.helpBgColor = options.helpBgColor ?? ((t) => t);
@@ -155,7 +158,14 @@ export class Pager implements Component {
   }
 
   private getContentWidth(width: number): number {
-    return this.showLineNumbers ? width - LINE_NUMBER_WIDTH : width;
+    const availableWidth = this.showLineNumbers
+      ? width - LINE_NUMBER_WIDTH
+      : width;
+    // Use wrapWidth if set and smaller than available width
+    if (this.wrapWidth > 0 && this.wrapWidth < availableWidth) {
+      return this.wrapWidth;
+    }
+    return availableWidth;
   }
 
   render(width: number): string[] {

@@ -106,7 +106,7 @@ class StatusBar implements Component {
 async function renderWithoutPager(
   content: string,
   theme: ResolvedTheme,
-  customWidth: number | null,
+  wrapWidth: number,
 ): Promise<void> {
   // Init highlighter with theme
   await initSyntaxHighlighter(theme.textmate);
@@ -116,8 +116,10 @@ async function renderWithoutPager(
   const defaultTextStyle = buildDefaultTextStyle(theme.colors);
 
   const markdown = new Markdown(content, 1, 0, markdownTheme, defaultTextStyle);
+  const terminalWidth = process.stdout.columns || 80;
+  // Use wrapWidth if set (>0), otherwise use terminal width
   const width =
-    customWidth && customWidth > 0 ? customWidth : process.stdout.columns || 80;
+    wrapWidth > 0 ? Math.min(wrapWidth, terminalWidth) : terminalWidth;
   const lines = markdown.render(width);
 
   for (const line of lines) {
@@ -332,6 +334,7 @@ async function main(): Promise<void> {
     },
     onColorSchemeChange: handleColorSchemeChange,
     showLineNumbers,
+    wrapWidth: options.width,
     bgColor: chalk.bgHex(currentTheme.colors.background),
     fgColor: chalk.hex(currentTheme.colors.foreground),
     helpBgColor: chalk.bgHex(currentTheme.colors.helpBg),
