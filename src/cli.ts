@@ -154,9 +154,7 @@ _${APP_NAME}_completions() {
     
     COMPREPLY=()
     for f in "\${files[@]}"; do
-        if [[ "$f" == *.md || "$f" == *.markdown ]]; then
-            COMPREPLY+=( "$f" )
-        fi
+        COMPREPLY+=( "$f" )
     done
     for d in "\${dirs[@]}"; do
         COMPREPLY+=( "$d/" )

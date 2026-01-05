@@ -20,6 +20,7 @@ import { type ColorScheme, detectColorScheme } from "./color-scheme.js";
 import { getThemeName, loadConfig, saveDefaultConfig } from "./config.js";
 import { openInEditor } from "./editor.js";
 import { createHighlightCodeFn, initSyntaxHighlighter } from "./highlighter.js";
+import { preprocessMdx } from "./mdx.js";
 import { Pager } from "./pager.js";
 import {
   buildDefaultTextStyle,
@@ -162,13 +163,11 @@ async function main(): Promise<void> {
       console.error(`Error: File not found: ${filePath}`);
       process.exit(1);
     }
-    if (!filePath.endsWith(".md") && !filePath.endsWith(".markdown")) {
-      console.error(
-        "Error: Only markdown files (.md, .markdown) are supported",
-      );
-      process.exit(1);
-    }
     content = fs.readFileSync(filePath, "utf8");
+    // Preprocess MDX files
+    if (filePath.endsWith(".mdx")) {
+      content = preprocessMdx(content);
+    }
     filename = filePath;
   } else if (!process.stdin.isTTY) {
     // Reading from piped stdin
@@ -284,7 +283,11 @@ async function main(): Promise<void> {
   const reloadContent = () => {
     if (filePath) {
       try {
-        const newContent = fs.readFileSync(filePath, "utf8");
+        let newContent = fs.readFileSync(filePath, "utf8");
+        // Preprocess MDX files
+        if (filePath.endsWith(".mdx")) {
+          newContent = preprocessMdx(newContent);
+        }
         const newMarkdown = new Markdown(
           newContent,
           1,
@@ -300,8 +303,13 @@ async function main(): Promise<void> {
     }
   };
 
-  // File watcher for auto-reload
-  const fileWatcher = filePath ? watchFile(filePath, reloadContent) : null;
+  // File watcher for change notification
+  const fileWatcher = filePath
+    ? watchFile(filePath, () => {
+        pager.setFileChanged(true);
+        tui.requestRender(true);
+      })
+    : null;
 
   pager = new Pager({
     content: markdown,
@@ -310,6 +318,10 @@ async function main(): Promise<void> {
       tui.stop();
       exitAlternateScreen();
       process.exit(0);
+    },
+    onReload: () => {
+      reloadContent();
+      pager.setFileChanged(false);
     },
     onEdit: (lineNumber) => {
       // Only edit if we have a file path (not stdin)

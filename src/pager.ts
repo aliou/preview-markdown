@@ -35,8 +35,9 @@ const HELP_LINES = [
   "j/↓ down               G/end   go to bottom",
   "b/pgup  page up        /       search",
   "f/pgdn  page down      n/N     next/prev match",
-  "u  ½ page up           e       edit in $EDITOR",
-  "d  ½ page down         ?       toggle help",
+  "u  ½ page up           r       reload file",
+  "d  ½ page down         e       edit in $EDITOR",
+  "                       ?       toggle help",
   "                       q/esc   quit",
 ];
 
@@ -53,6 +54,7 @@ export interface PagerOptions {
   content: Component;
   onExit: () => void;
   onEdit?: (lineNumber: number) => void;
+  onReload?: () => void;
   onSuspend?: () => void;
   onColorSchemeChange?: (scheme: ColorScheme) => void;
   showLineNumbers?: boolean;
@@ -70,8 +72,10 @@ export class Pager implements Component {
   private content: Component;
   private onExit: () => void;
   private onEdit?: (lineNumber: number) => void;
+  private onReload?: () => void;
   private onSuspend?: () => void;
   private onColorSchemeChange?: (scheme: ColorScheme) => void;
+  private fileChanged = false;
   private showLineNumbers: boolean;
   private wrapWidth: number;
   private scrollOffset = 0;
@@ -97,6 +101,7 @@ export class Pager implements Component {
     this.content = options.content;
     this.onExit = options.onExit;
     this.onEdit = options.onEdit;
+    this.onReload = options.onReload;
     this.onSuspend = options.onSuspend;
     this.onColorSchemeChange = options.onColorSchemeChange;
     this.showLineNumbers = options.showLineNumbers ?? false;
@@ -117,6 +122,10 @@ export class Pager implements Component {
 
   setViewportHeight(height: number): void {
     this.viewportHeight = height;
+  }
+
+  setFileChanged(changed: boolean): void {
+    this.fileChanged = changed;
   }
 
   updateColors(colors: {
@@ -153,8 +162,17 @@ export class Pager implements Component {
     return this.searchMode ? 1 : 0;
   }
 
+  private getNotificationHeight(): number {
+    return this.fileChanged ? 1 : 0;
+  }
+
   private getContentHeight(): number {
-    return this.viewportHeight - this.getHelpHeight() - this.getSearchHeight();
+    return (
+      this.viewportHeight -
+      this.getHelpHeight() -
+      this.getSearchHeight() -
+      this.getNotificationHeight()
+    );
   }
 
   private getContentWidth(width: number): number {
@@ -210,6 +228,11 @@ export class Pager implements Component {
       visible.push(emptyLine);
     }
 
+    // Append file changed notification if needed
+    if (this.fileChanged) {
+      visible.push(this.renderNotification(width));
+    }
+
     // Append search input if in search mode
     if (this.searchMode) {
       visible.push(this.renderSearchInput(width));
@@ -230,6 +253,12 @@ export class Pager implements Component {
     const content = `${prompt}${query}${cursor}`;
     const padding = " ".repeat(Math.max(0, width - content.length));
     return this.searchBgColor(this.searchFgColor(content + padding));
+  }
+
+  private renderNotification(width: number): string {
+    const message = " File changed. Press r to reload.";
+    const padding = " ".repeat(Math.max(0, width - message.length));
+    return this.helpBgColor(this.helpFgColor(message + padding));
   }
 
   private renderHelp(width: number): string[] {
@@ -319,6 +348,14 @@ export class Pager implements Component {
         // Calculate current line number (1-based)
         const lineNumber = this.scrollOffset + 1;
         this.onEdit(lineNumber);
+      }
+      return;
+    }
+
+    // Reload file
+    if (data === "r" || data === "R") {
+      if (this.onReload) {
+        this.onReload();
       }
       return;
     }
