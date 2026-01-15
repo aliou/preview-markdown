@@ -1,12 +1,5 @@
 #!/usr/bin/env bun
 import * as fs from "node:fs";
-
-// Debug log at startup
-fs.writeFileSync(
-  "/tmp/pmd-debug.log",
-  `[${new Date().toISOString()}] pmd started\n`,
-);
-
 import {
   type Component,
   Markdown,
@@ -88,18 +81,67 @@ class StatusBar implements Component {
     const scrollInfo = this.pager.getScrollInfo();
     const searchInfo = this.pager.getSearchInfo();
 
-    const left = ` ${this.filename}`;
+    // Build components with priority: percent > search > filename > help
+    const percentStr = ` ${scrollInfo.percent}% `;
+    const searchStr = searchInfo
+      ? ` [${searchInfo.current}/${searchInfo.total}] `
+      : "";
+    const helpStr = this.pager.isShowingHelp() ? " ? Close " : " ? Help ";
 
-    // Build right side: search info (if any), scroll %, help hint
-    let right = "";
-    if (searchInfo) {
-      right += ` [${searchInfo.current}/${searchInfo.total}] `;
+    // Calculate fixed widths
+    const percentWidth = visibleWidth(percentStr);
+    const searchWidth = visibleWidth(searchStr);
+    const helpWidth = visibleWidth(helpStr);
+
+    // Space available for filename (with 1 char left margin)
+    // Priority: always show percent, then search, then filename, then help
+    const minLeftMargin = 1;
+
+    // Try with help text
+    let availableForFilename =
+      width - minLeftMargin - percentWidth - searchWidth - helpWidth;
+    let showHelp = true;
+
+    // If not enough space, hide help text
+    if (availableForFilename < 1) {
+      availableForFilename = width - minLeftMargin - percentWidth - searchWidth;
+      showHelp = false;
     }
-    right += ` ${scrollInfo.percent}% `;
-    right += this.pager.isShowingHelp() ? " ? Close " : " ? Help ";
 
-    const padding = width - visibleWidth(left) - visibleWidth(right);
-    const line = left + " ".repeat(Math.max(0, padding)) + right;
+    // Truncate filename from beginning if needed (keep file name visible)
+    let displayFilename = this.filename;
+    const filenameWidth = visibleWidth(displayFilename);
+    if (filenameWidth > availableForFilename) {
+      // Truncate from start, prepend ellipsis
+      const ellipsis = "…";
+      const ellipsisWidth = visibleWidth(ellipsis);
+      const targetWidth = availableForFilename - ellipsisWidth;
+      if (targetWidth > 0) {
+        // Remove characters from start until it fits
+        let truncated = displayFilename;
+        while (visibleWidth(truncated) > targetWidth && truncated.length > 0) {
+          truncated = truncated.slice(1);
+        }
+        displayFilename = ellipsis + truncated;
+      } else {
+        // Not enough space even for ellipsis, show nothing
+        displayFilename = "";
+      }
+    }
+
+    // Build left and right parts
+    const left = ` ${displayFilename}`;
+    let right = searchStr + percentStr;
+    if (showHelp) {
+      right += helpStr;
+    }
+
+    // Calculate padding and build final line
+    const leftWidth = visibleWidth(left);
+    const rightWidth = visibleWidth(right);
+    const padding = Math.max(0, width - leftWidth - rightWidth);
+    const line = left + " ".repeat(padding) + right;
+
     return [this.bgColor(this.fgColor(line))];
   }
 }
