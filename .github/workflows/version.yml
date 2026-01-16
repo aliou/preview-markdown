@@ -109,12 +109,16 @@ jobs:
           sed -i "s|hash = \"sha256-.*\"; # darwin|hash = \"${DARWIN_HASH}\"; # darwin|" flake.nix
           sed -i "s|hash = \"sha256-.*\"; # linux|hash = \"${LINUX_HASH}\"; # linux|" flake.nix
           
-          # Commit hash update
+          # Commit hash update if changed
           git add flake.nix
-          git commit -m "chore: update binary hashes for ${TAG}"
-          git push origin main
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update binary hashes for ${TAG}"
+            git push origin main
+          else
+            echo "No hash changes needed"
+          fi
           
-          # Create tag on the new commit and release
+          # Create tag and release
           git tag -a "${TAG}" -m "Release ${TAG}"
           git push origin "${TAG}"
           
