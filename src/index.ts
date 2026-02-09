@@ -14,6 +14,7 @@ import { getThemeName, loadConfig, saveDefaultConfig } from "./config.js";
 import { openInEditor } from "./editor.js";
 import { createHighlightCodeFn, initSyntaxHighlighter } from "./highlighter.js";
 import { preprocessMdx } from "./mdx.js";
+import { preprocessMermaid } from "./mermaid.js";
 import { Pager } from "./pager.js";
 import {
   buildDefaultTextStyle,
@@ -210,10 +211,12 @@ async function main(): Promise<void> {
     if (filePath.endsWith(".mdx")) {
       content = preprocessMdx(content);
     }
+    content = preprocessMermaid(content);
     filename = filePath;
   } else if (!process.stdin.isTTY) {
     // Reading from piped stdin
     content = await readStdin();
+    content = preprocessMermaid(content);
     filename = "stdin";
   } else {
     printHelp();
@@ -275,9 +278,11 @@ async function main(): Promise<void> {
     markdownTheme = buildMarkdownTheme(currentTheme.colors, highlightCode);
     defaultTextStyle = buildDefaultTextStyle(currentTheme.colors);
 
-    const currentContent = filePath
-      ? fs.readFileSync(filePath, "utf8")
-      : content;
+    let currentContent = filePath ? fs.readFileSync(filePath, "utf8") : content;
+    if (filePath?.endsWith(".mdx")) {
+      currentContent = preprocessMdx(currentContent);
+    }
+    currentContent = preprocessMermaid(currentContent);
     markdown = new Markdown(
       currentContent,
       1,
@@ -330,6 +335,7 @@ async function main(): Promise<void> {
         if (filePath.endsWith(".mdx")) {
           newContent = preprocessMdx(newContent);
         }
+        newContent = preprocessMermaid(newContent);
         const newMarkdown = new Markdown(
           newContent,
           1,
