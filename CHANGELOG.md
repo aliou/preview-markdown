@@ -1,5 +1,11 @@
 # preview-markdown
 
+## 0.3.0
+
+### Minor Changes
+
+- 8a56124: Render mermaid code blocks as ASCII diagrams using beautiful-mermaid. Supports flowcharts, sequence, class, ER, and state diagrams. Falls back to raw source on unsupported types.
+
 ## 0.2.0
 
 ### Minor Changes
