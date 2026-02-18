@@ -9,8 +9,9 @@ export interface CliOptions {
   noPager: boolean;
   lineNumbers: boolean;
   width: number;
+  depth: number;
   completion: string | null;
-  file: string | null;
+  source: string | null;
 }
 
 const VERSION = "0.1.0";
@@ -25,8 +26,9 @@ export function parseArgs(args: string[]): CliOptions {
     noPager: false,
     lineNumbers: false,
     width: 100,
+    depth: 1,
     completion: null,
-    file: null,
+    source: null,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -56,6 +58,16 @@ export function parseArgs(args: string[]): CliOptions {
       }
     } else if (arg?.startsWith("--width=")) {
       options.width = parseInt(arg.slice(8), 10);
+    } else if (arg === "-d" || arg === "--depth") {
+      const next = args[i + 1];
+      if (next !== undefined && !next.startsWith("-")) {
+        const n = parseInt(next, 10);
+        options.depth = isNaN(n) || n < 1 ? 1 : n;
+        i++;
+      }
+    } else if (arg?.startsWith("--depth=")) {
+      const n = parseInt(arg.slice(8), 10);
+      options.depth = isNaN(n) || n < 1 ? 1 : n;
     } else if (arg === "--completion") {
       const next = args[i + 1];
       if (next !== undefined && !next.startsWith("-")) {
@@ -65,7 +77,7 @@ export function parseArgs(args: string[]): CliOptions {
     } else if (arg?.startsWith("--completion=")) {
       options.completion = arg.slice(13);
     } else if (arg && !arg.startsWith("-")) {
-      options.file = arg;
+      options.source = arg;
     }
   }
 
@@ -84,8 +96,11 @@ export function printHelp(): void {
   Render markdown on the CLI, with pizzazz!
 
 ${bold("Usage:")}
-  ${APP_NAME} [SOURCE] [flags]
+  ${APP_NAME} [SOURCE|DIR] [flags]
   ${APP_NAME} [command]
+
+  With no arguments and a TTY, opens a directory browser at the current directory.
+  With a file, renders it in the pager. With a directory, opens the browser there.
 
 ${bold("Available Commands:")}
   completion  Generate the autocompletion script for the specified shell
@@ -93,12 +108,25 @@ ${bold("Available Commands:")}
 
 ${bold("Flags:")}
   -h, --help            help for ${APP_NAME}
-  -l, --line-numbers    show line numbers ${dim("(TUI-mode only)")}
-  -n, --no-pager        display rendered markdown without pager
+  -d, --depth uint      directory browser recursion depth ${dim("(default: 1, top-level only)")}
+  -l, --line-numbers    show line numbers ${dim("(pager only)")}
+  -n, --no-pager        display rendered markdown without pager ${dim("(files only, not directories)")}
       --light           force light mode
       --dark            force dark mode
   -v, --version         version for ${APP_NAME}
   -w, --width uint      word-wrap at width ${dim("(default: 100, 0 to disable)")}
+
+${bold("Navigation (in browser):")}
+  j, Down               Move down
+  k, Up                 Move up
+  f, PgDn               Page down
+  b, PgUp               Page up
+  g, Home               Go to top
+  G, End                Go to bottom
+  /                     Filter files
+  Enter                 Open selected file
+  ?                     Show keyboard shortcuts
+  q, Esc, Ctrl+C        Quit
 
 ${bold("Navigation (in pager):")}
   j, Down               Scroll down
@@ -113,7 +141,7 @@ ${bold("Navigation (in pager):")}
   n, N                  Next/previous search match
   e                     Edit file in $EDITOR
   ?                     Show keyboard shortcuts
-  q, Esc, Ctrl+C        Quit
+  q, Esc, Ctrl+C        Quit (back to browser if opened from one)
 
 Use "${APP_NAME} [command] --help" for more information about a command.
 `);
@@ -129,14 +157,14 @@ _${APP_NAME}_completions() {
     COMPREPLY=()
     cur="\${COMP_WORDS[COMP_CWORD]}"
     prev="\${COMP_WORDS[COMP_CWORD-1]}"
-    opts="-h --help -v --version -l --line-numbers -n --no-pager --light --dark -w --width --completion --init-config"
+    opts="-h --help -v --version -l --line-numbers -n --no-pager --light --dark -w --width -d --depth --completion --init-config"
 
     case "\${prev}" in
         --completion)
             COMPREPLY=( $(compgen -W "bash zsh fish" -- "\${cur}") )
             return 0
             ;;
-        -w|--width)
+        -w|--width|-d|--depth)
             return 0
             ;;
     esac
@@ -146,12 +174,11 @@ _${APP_NAME}_completions() {
         return 0
     fi
 
-    # Complete markdown files and directories (for navigation)
-    # Use extglob for matching .md and .markdown files
+    # Complete markdown files and directories
     local IFS=$'\\n'
     local files=( $(compgen -f -- "\${cur}") )
     local dirs=( $(compgen -d -- "\${cur}") )
-    
+
     COMPREPLY=()
     for f in "\${files[@]}"; do
         COMPREPLY+=( "$f" )
@@ -187,9 +214,11 @@ _${APP_NAME}() {
         '--dark[Force dark mode]' \\
         '-w[Word-wrap at width]:width:' \\
         '--width[Word-wrap at width]:width:' \\
+        '-d[Browser recursion depth]:depth:' \\
+        '--depth[Browser recursion depth]:depth:' \\
         '--completion[Generate completion script]:shell:(bash zsh fish)' \\
         '--init-config[Create default config file]' \\
-        '*:markdown file:_files -g "*(/) *.md *.markdown"'
+        '*:markdown file or directory:_files -g "*(/) *.md *.markdown *.mdx"'
 }
 
 # Register the completion function
@@ -210,9 +239,10 @@ complete -c ${APP_NAME} -s n -l no-pager -d 'Display without pager'
 complete -c ${APP_NAME} -l light -d 'Force light mode'
 complete -c ${APP_NAME} -l dark -d 'Force dark mode'
 complete -c ${APP_NAME} -s w -l width -d 'Word-wrap at width' -x
+complete -c ${APP_NAME} -s d -l depth -d 'Browser recursion depth' -x
 complete -c ${APP_NAME} -l completion -d 'Generate completion script' -xa 'bash zsh fish'
 complete -c ${APP_NAME} -l init-config -d 'Create default config file'
-complete -c ${APP_NAME} -f -a '(__fish_complete_suffix .md .markdown)'
+complete -c ${APP_NAME} -f -a '(__fish_complete_suffix .md .markdown .mdx)'
 `;
 }
 

@@ -6,6 +6,7 @@ This project is an experiment in building a complete tool using AI coding agents
 
 ## Features
 
+- Directory browser: run `pmd` or `pmd <dir>` to browse and open markdown files
 - Syntax highlighting for code blocks with language labels
 - Vim-style navigation (j/k, d/u, g/G, etc.)
 - Search with `/` and navigate matches with `n`/`N`
@@ -71,22 +72,46 @@ A home-manager module is also available:
 ## Usage
 
 ```bash
-pmd README.md           # Open in pager
-pmd --no-pager FILE.md  # Print to stdout
+pmd                     # Browse markdown files in current directory
+pmd docs/               # Browse markdown files in docs/
+pmd docs/ --depth 3     # Browse recursively up to 3 levels deep
+pmd README.md           # Open a file directly in the pager
+pmd --no-pager FILE.md  # Print to stdout without pager
 cat FILE.md | pmd       # Read from stdin
 ```
+
+`--no-pager` cannot be used with a directory argument.
 
 ### Options
 
 ```
--n, --no-pager     Display rendered markdown without pager
--l, --line-numbers Show line numbers
+-d, --depth N      Directory browser recursion depth (default: 1, top-level only)
+-n, --no-pager     Display rendered markdown without pager (files only)
+-l, --line-numbers Show line numbers (pager only)
 -w, --width N      Word-wrap at width (0 to disable)
     --light        Force light mode
     --dark         Force dark mode
 ```
 
-### Navigation
+### Browser navigation
+
+Browsing supports `.md`, `.markdown`, and `.mdx` files.
+
+| Key | Action |
+|-----|--------|
+| `j` / `Down` | Move down |
+| `k` / `Up` | Move up |
+| `f` / `PgDn` | Page down |
+| `b` / `PgUp` | Page up |
+| `g` / `Home` | Go to top |
+| `G` / `End` | Go to bottom |
+| `/` | Filter files by name |
+| `Esc` | Clear filter |
+| `Enter` | Open selected file |
+| `?` | Show help |
+| `q` / `Esc` | Quit |
+
+### Pager navigation
 
 | Key | Action |
 |-----|--------|
@@ -102,7 +127,7 @@ cat FILE.md | pmd       # Read from stdin
 | `n` / `N` | Next/previous match |
 | `e` | Edit in $EDITOR |
 | `?` | Show help |
-| `q` / `Esc` | Quit |
+| `q` / `Esc` | Quit (returns to browser if opened from one) |
 
 ### Shell Completions
 
