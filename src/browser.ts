@@ -43,9 +43,21 @@ export interface Entry {
  */
 export function scanDirectory(baseDir: string, maxDepth: number): Entry[] {
   const entries: Entry[] = [];
+  // Track real paths of visited directories to prevent symlink cycles.
+  const visitedRealPaths = new Set<string>();
 
   function recurse(dir: string, currentDepth: number): void {
     if (currentDepth > maxDepth) return;
+
+    // Resolve the real path to detect cycles introduced by symlinks.
+    let realDir: string;
+    try {
+      realDir = fs.realpathSync(dir);
+    } catch {
+      return;
+    }
+    if (visitedRealPaths.has(realDir)) return;
+    visitedRealPaths.add(realDir);
 
     let items: fs.Dirent[];
     try {
@@ -55,16 +67,24 @@ export function scanDirectory(baseDir: string, maxDepth: number): Entry[] {
     }
 
     for (const item of items) {
-      // Skip hidden files/dirs and .git
+      // Skip hidden files/dirs (including .git)
       if (item.name.startsWith(".")) continue;
 
       const fullPath = path.join(dir, item.name);
 
+      // For symlinks, resolve via stat to get the target type.
+      // Directories are followed (cycle guard above handles loops).
+      // Files are included if they have a markdown extension.
       if (item.isSymbolicLink()) {
-        // Follow symlinks to files but skip symlinked directories
+        let stat: fs.Stats;
         try {
-          const stat = fs.statSync(fullPath);
-          if (stat.isDirectory()) continue;
+          stat = fs.statSync(fullPath);
+        } catch {
+          continue; // Broken symlink — skip.
+        }
+        if (stat.isDirectory()) {
+          recurse(fullPath, currentDepth + 1);
+        } else if (stat.isFile()) {
           const ext = path.extname(item.name).toLowerCase();
           if (MD_EXTENSIONS.has(ext)) {
             entries.push({
@@ -72,8 +92,6 @@ export function scanDirectory(baseDir: string, maxDepth: number): Entry[] {
               relativePath: path.relative(baseDir, fullPath),
             });
           }
-        } catch {
-          continue;
         }
         continue;
       }
