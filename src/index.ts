@@ -322,8 +322,7 @@ async function main(): Promise<void> {
   const buildBrowserColors = () => ({
     bgColor: chalk.bgHex(currentTheme.colors.background),
     fgColor: chalk.hex(currentTheme.colors.foreground),
-    selectedBgColor: chalk.bgHex(currentTheme.colors.statusBarBg),
-    selectedFgColor: chalk.hex(currentTheme.colors.statusBarFg),
+    accentColor: chalk.hex(currentTheme.colors.link),
     dimColor: chalk.hex(currentTheme.colors.lineNumber),
     helpBgColor: chalk.bgHex(currentTheme.colors.helpBg),
     helpFgColor: chalk.hex(currentTheme.colors.helpFg),

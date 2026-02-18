@@ -5,6 +5,9 @@ import { Key, matchesKey } from "@mariozechner/pi-tui";
 
 const MD_EXTENSIONS = new Set([".md", ".markdown", ".mdx"]);
 
+// Lines rendered per list item: filename, timestamp, blank separator.
+const ITEM_HEIGHT = 3;
+
 const PAGE_UP_SEQUENCES = ["\x1b[5~", "\x1b[5;1~"];
 const PAGE_DOWN_SEQUENCES = ["\x1b[6~", "\x1b[6;1~"];
 
@@ -22,24 +25,46 @@ const COLOR_SCHEME_LIGHT = "\x1b[?997;2n";
 
 export type ColorScheme = "light" | "dark";
 
+const MINI_HELP = "  enter open  •  j/k move  •  / filter  •  ? help  •  q quit";
+
+// Two-column help displayed as a full-screen overlay.
 const HELP_LINES = [
-  "j/↓  move down          g/home  go to top",
-  "k/↑  move up            G/end   go to bottom",
-  "f/pgdn  page down       /       filter files",
-  "b/pgup  page up         esc     clear filter",
-  "enter   open file       ?       toggle help",
-  "                        q/esc   quit",
+  "  j / ↓     move down          g / Home    go to top",
+  "  k / ↑     move up            G / End     go to bottom",
+  "  f / PgDn  page down          /           filter files",
+  "  b / PgUp  page up            Esc         clear filter",
+  "  Enter     open file          ?           close help",
+  "                               q / Esc     quit",
 ];
+
+function relativeTime(mtime: Date): string {
+  const diff = Date.now() - mtime.getTime();
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  const months = Math.floor(days / 30);
+  const years = Math.floor(days / 365);
+
+  if (seconds < 60) return "just now";
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  if (days < 30) return `${days} day${days === 1 ? "" : "s"} ago`;
+  if (months < 12) return `${months} month${months === 1 ? "" : "s"} ago`;
+  return `${years} year${years === 1 ? "" : "s"} ago`;
+}
 
 export interface Entry {
   absolutePath: string;
   relativePath: string;
+  mtime: Date;
 }
 
 /**
  * Recursively scan baseDir for markdown files up to maxDepth levels.
  * Depth 1 means only files directly in baseDir. Skips hidden entries,
- * .git, and symlinked directories. Returns entries sorted by relative path.
+ * .git, and uses realpath-based cycle detection for symlinked directories.
+ * Returns entries sorted by relative path.
  */
 export function scanDirectory(baseDir: string, maxDepth: number): Entry[] {
   const entries: Entry[] = [];
@@ -90,6 +115,7 @@ export function scanDirectory(baseDir: string, maxDepth: number): Entry[] {
             entries.push({
               absolutePath: fullPath,
               relativePath: path.relative(baseDir, fullPath),
+              mtime: stat.mtime,
             });
           }
         }
@@ -101,9 +127,16 @@ export function scanDirectory(baseDir: string, maxDepth: number): Entry[] {
       } else if (item.isFile()) {
         const ext = path.extname(item.name).toLowerCase();
         if (MD_EXTENSIONS.has(ext)) {
+          let mtime = new Date(0);
+          try {
+            mtime = fs.statSync(fullPath).mtime;
+          } catch {
+            // Leave mtime as epoch on error.
+          }
           entries.push({
             absolutePath: fullPath,
             relativePath: path.relative(baseDir, fullPath),
+            mtime,
           });
         }
       }
@@ -118,8 +151,9 @@ export function scanDirectory(baseDir: string, maxDepth: number): Entry[] {
 export interface BrowserColors {
   bgColor?: (text: string) => string;
   fgColor?: (text: string) => string;
-  selectedBgColor?: (text: string) => string;
-  selectedFgColor?: (text: string) => string;
+  // Color used for the selected item's gutter marker and filename.
+  accentColor?: (text: string) => string;
+  // Color used for timestamps and mini help text.
   dimColor?: (text: string) => string;
   helpBgColor?: (text: string) => string;
   helpFgColor?: (text: string) => string;
@@ -138,7 +172,7 @@ export class Browser implements Component {
   private entries: Entry[];
   private filtered: Entry[];
   private cursor = 0;
-  private scrollOffset = 0;
+  private scrollOffset = 0; // In items, not lines.
   private viewportHeight = 0;
   private filterQuery = "";
   private filterMode = false;
@@ -148,8 +182,7 @@ export class Browser implements Component {
   private onColorSchemeChange?: (scheme: ColorScheme) => void;
   private bgColor: (text: string) => string;
   private fgColor: (text: string) => string;
-  private selectedBgColor: (text: string) => string;
-  private selectedFgColor: (text: string) => string;
+  private accentColor: (text: string) => string;
   private dimColor: (text: string) => string;
   private helpBgColor: (text: string) => string;
   private helpFgColor: (text: string) => string;
@@ -164,8 +197,7 @@ export class Browser implements Component {
     this.onColorSchemeChange = options.onColorSchemeChange;
     this.bgColor = options.bgColor ?? ((t) => t);
     this.fgColor = options.fgColor ?? ((t) => t);
-    this.selectedBgColor = options.selectedBgColor ?? ((t) => t);
-    this.selectedFgColor = options.selectedFgColor ?? ((t) => t);
+    this.accentColor = options.accentColor ?? ((t) => t);
     this.dimColor = options.dimColor ?? ((t) => t);
     this.helpBgColor = options.helpBgColor ?? ((t) => t);
     this.helpFgColor = options.helpFgColor ?? ((t) => t);
@@ -182,10 +214,7 @@ export class Browser implements Component {
   updateColors(colors: BrowserColors): void {
     if (colors.bgColor !== undefined) this.bgColor = colors.bgColor;
     if (colors.fgColor !== undefined) this.fgColor = colors.fgColor;
-    if (colors.selectedBgColor !== undefined)
-      this.selectedBgColor = colors.selectedBgColor;
-    if (colors.selectedFgColor !== undefined)
-      this.selectedFgColor = colors.selectedFgColor;
+    if (colors.accentColor !== undefined) this.accentColor = colors.accentColor;
     if (colors.dimColor !== undefined) this.dimColor = colors.dimColor;
     if (colors.helpBgColor !== undefined) this.helpBgColor = colors.helpBgColor;
     if (colors.helpFgColor !== undefined) this.helpFgColor = colors.helpFgColor;
@@ -203,19 +232,17 @@ export class Browser implements Component {
     };
   }
 
-  private getHelpHeight(): number {
-    return this.showingHelp ? HELP_LINES.length + 1 : 0;
-  }
-
-  private getFilterHeight(): number {
-    return this.filterMode ? 1 : 0;
-  }
-
+  // Lines available for list content. The bottom line is always reserved for
+  // the mini help or filter input. When the help overlay is shown it takes
+  // the full viewport so there is no list area.
   private getListHeight(): number {
-    return Math.max(
-      0,
-      this.viewportHeight - this.getHelpHeight() - this.getFilterHeight(),
-    );
+    if (this.showingHelp) return 0;
+    return Math.max(0, this.viewportHeight - 1);
+  }
+
+  // How many 3-line items fit in the current list area.
+  private getVisibleItemCount(): number {
+    return Math.floor(this.getListHeight() / ITEM_HEIGHT);
   }
 
   private applyFilter(): void {
@@ -232,30 +259,113 @@ export class Browser implements Component {
   }
 
   private ensureCursorVisible(): void {
-    const listHeight = this.getListHeight();
-    if (listHeight <= 0) return;
+    const visible = this.getVisibleItemCount();
+    if (visible <= 0) return;
     if (this.cursor < this.scrollOffset) {
       this.scrollOffset = this.cursor;
-    } else if (this.cursor >= this.scrollOffset + listHeight) {
-      this.scrollOffset = this.cursor - listHeight + 1;
+    } else if (this.cursor >= this.scrollOffset + visible) {
+      this.scrollOffset = this.cursor - visible + 1;
     }
-    const maxScroll = Math.max(0, this.filtered.length - listHeight);
+    const maxScroll = Math.max(0, this.filtered.length - visible);
     this.scrollOffset = Math.min(Math.max(0, this.scrollOffset), maxScroll);
   }
 
-  render(width: number): string[] {
-    const listHeight = this.getListHeight();
+  // Render a single 3-line item: gutter+bullet+name, timestamp, blank.
+  private renderItem(entry: Entry, isSelected: boolean, width: number): string[] {
+    const gutter = isSelected ? "│ " : "  ";
+    const bullet = "\u2022 "; // •
+    const prefix = gutter + bullet; // 4 chars
+
+    // Line 1: filename, truncated if needed.
+    const nameAvail = Math.max(0, width - prefix.length);
+    let name = entry.relativePath;
+    if (name.length > nameAvail) {
+      name = name.slice(0, nameAvail - 1) + "\u2026";
+    }
+    const nameLine =
+      prefix + name + " ".repeat(Math.max(0, nameAvail - name.length));
+
+    // Line 2: relative timestamp, indented to align with the filename.
+    const timeIndent = "    "; // same width as prefix
+    const timeStr = timeIndent + relativeTime(entry.mtime);
+    const timeLine =
+      timeStr + " ".repeat(Math.max(0, width - timeStr.length));
+
+    // Line 3: blank separator.
+    const blankLine = " ".repeat(width);
+
+    const bg = this.bgColor;
+    if (isSelected) {
+      return [
+        bg(this.accentColor(nameLine)),
+        bg(this.dimColor(timeLine)),
+        bg(blankLine),
+      ];
+    }
+    return [
+      bg(this.fgColor(nameLine)),
+      bg(this.dimColor(timeLine)),
+      bg(blankLine),
+    ];
+  }
+
+  private renderMiniHelp(width: number): string {
+    const text = MINI_HELP;
+    const padded =
+      text.length < width
+        ? text + " ".repeat(width - text.length)
+        : text.slice(0, width);
+    return this.bgColor(this.dimColor(padded));
+  }
+
+  private renderFilterInput(width: number): string {
+    const content = `/${this.filterQuery}\u2588`; // █ cursor
+    const padding = " ".repeat(Math.max(0, width - content.length));
+    return this.filterBgColor(this.filterFgColor(content + padding));
+  }
+
+  private renderHelpOverlay(width: number): string[] {
     const lines: string[] = [];
+    const bg = this.helpBgColor;
+    const fg = this.helpFgColor;
+    const emptyLine = bg(" ".repeat(width));
+
+    // Two blank lines at the top as padding.
+    lines.push(emptyLine);
+    lines.push(emptyLine);
+
+    for (const line of HELP_LINES) {
+      const padded = line + " ".repeat(Math.max(0, width - line.length));
+      lines.push(bg(fg(padded)));
+    }
+
+    // Fill remaining viewport.
+    while (lines.length < this.viewportHeight) {
+      lines.push(emptyLine);
+    }
+
+    return lines;
+  }
+
+  render(width: number): string[] {
+    if (this.showingHelp) {
+      return this.renderHelpOverlay(width);
+    }
+
+    const listHeight = this.getListHeight();
+    const visibleCount = this.getVisibleItemCount();
+    const lines: string[] = [];
+    const emptyLine = this.bgColor(" ".repeat(width));
 
     if (this.filtered.length === 0) {
       const msg =
         this.filterQuery.length > 0
           ? "No files match your filter."
           : "No markdown files found.";
-      const emptyLine = this.bgColor(" ".repeat(width));
       for (let i = 0; i < listHeight; i++) {
         if (i === Math.floor(listHeight / 2)) {
-          const padded = `  ${msg}${" ".repeat(Math.max(0, width - msg.length - 2))}`;
+          const padded =
+            `  ${msg}` + " ".repeat(Math.max(0, width - msg.length - 2));
           lines.push(this.bgColor(this.dimColor(padded)));
         } else {
           lines.push(emptyLine);
@@ -264,43 +374,25 @@ export class Browser implements Component {
     } else {
       this.ensureCursorVisible();
       const start = this.scrollOffset;
-      const end = Math.min(start + listHeight, this.filtered.length);
+      const end = Math.min(start + visibleCount, this.filtered.length);
 
       for (let i = start; i < end; i++) {
         const entry = this.filtered[i];
         if (!entry) continue;
-        const isSelected = i === this.cursor;
-        const text = `  ${entry.relativePath}`;
-        const padding = " ".repeat(Math.max(0, width - text.length));
-        const line = text + padding;
-        if (isSelected) {
-          lines.push(this.selectedBgColor(this.selectedFgColor(line)));
-        } else {
-          lines.push(this.bgColor(this.fgColor(line)));
-        }
+        lines.push(...this.renderItem(entry, i === this.cursor, width));
       }
 
-      // Pad remaining list area with background
-      const emptyLine = this.bgColor(" ".repeat(width));
+      // Pad remaining list area.
       while (lines.length < listHeight) {
         lines.push(emptyLine);
       }
     }
 
-    // Filter input line
+    // Bottom line: filter input or mini help.
     if (this.filterMode) {
-      const content = `/${this.filterQuery}█`;
-      const padding = " ".repeat(Math.max(0, width - content.length));
-      lines.push(this.filterBgColor(this.filterFgColor(content + padding)));
-    }
-
-    // Help overlay at bottom
-    if (this.showingHelp) {
-      lines.push(this.helpBgColor(" ".repeat(width)));
-      for (const helpLine of HELP_LINES) {
-        const padded = `  ${helpLine}${" ".repeat(Math.max(0, width - helpLine.length - 2))}`;
-        lines.push(this.helpBgColor(this.helpFgColor(padded)));
-      }
+      lines.push(this.renderFilterInput(width));
+    } else {
+      lines.push(this.renderMiniHelp(width));
     }
 
     return lines;
@@ -322,13 +414,13 @@ export class Browser implements Component {
       return;
     }
 
-    // Toggle help
+    // Toggle help overlay.
     if (data === "?") {
       this.showingHelp = !this.showingHelp;
       return;
     }
 
-    // Any key closes help first
+    // Any key closes the help overlay.
     if (this.showingHelp) {
       this.showingHelp = false;
       return;
@@ -345,7 +437,7 @@ export class Browser implements Component {
       return;
     }
 
-    // Enter filter mode
+    // Enter filter mode.
     if (data === "/") {
       this.filterMode = true;
       this.filterQuery = "";
@@ -353,7 +445,7 @@ export class Browser implements Component {
       return;
     }
 
-    // Open selected entry
+    // Open selected entry.
     if (matchesKey(data, Key.enter)) {
       if (this.filtered.length > 0) {
         const entry = this.filtered[this.cursor];
@@ -362,8 +454,7 @@ export class Browser implements Component {
       return;
     }
 
-    const listHeight = this.getListHeight();
-    const pageSize = Math.max(1, listHeight - 1);
+    const pageSize = Math.max(1, this.getVisibleItemCount() - 1);
     const max = Math.max(0, this.filtered.length - 1);
 
     if (matchesKey(data, Key.up) || data === "k") {
@@ -456,12 +547,11 @@ export class BrowserStatusBar implements Component {
   render(width: number): string[] {
     const info = this.browser.getStatusInfo();
 
-    const helpStr = " ? Help ";
     const countStr = ` ${info.selected}/${info.total} `;
     const filterStr = info.filter ? ` [/${info.filter}] ` : "";
-    const right = filterStr + countStr + helpStr;
+    const right = filterStr + countStr;
 
-    // Show home-shortened path for readability
+    // Show home-shortened path for readability.
     const home = process.env.HOME ?? "";
     const displayBase =
       home && this.baseDir.startsWith(home)
@@ -472,7 +562,6 @@ export class BrowserStatusBar implements Component {
     const available = width - right.length;
     let displayDir = dirLabel;
     if (displayDir.length > available) {
-      // Truncate from start, prepend ellipsis
       let truncated = displayDir;
       while (truncated.length > available - 1 && truncated.length > 0) {
         truncated = truncated.slice(1);
