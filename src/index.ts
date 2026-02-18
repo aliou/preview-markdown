@@ -9,6 +9,12 @@ import {
   visibleWidth,
 } from "@mariozechner/pi-tui";
 import chalk from "chalk";
+import {
+  Browser,
+  BrowserStatusBar,
+  type Entry,
+  scanDirectory,
+} from "./browser.js";
 import { parseArgs, printCompletion, printHelp, printVersion } from "./cli.js";
 import { type ColorScheme, detectColorScheme } from "./color-scheme.js";
 import { getThemeName, loadConfig, saveDefaultConfig } from "./config.js";
@@ -24,12 +30,6 @@ import {
   resolveTheme,
 } from "./theme.js";
 import { watchFile } from "./watcher.js";
-import {
-  Browser,
-  BrowserStatusBar,
-  scanDirectory,
-  type Entry,
-} from "./browser.js";
 
 // Alternate screen buffer sequences
 const ENTER_ALT_SCREEN = "\x1b[?1049h";
@@ -248,9 +248,7 @@ async function main(): Promise<void> {
 
   // --no-pager with a directory input is a hard error
   if (options.noPager && mode === "browser") {
-    console.error(
-      "Error: --no-pager cannot be used with directory input",
-    );
+    console.error("Error: --no-pager cannot be used with directory input");
     process.exit(1);
   }
 
@@ -576,7 +574,13 @@ async function main(): Promise<void> {
     statusSwitcher.setActive(browserStatusBar);
   } else {
     // viewer or stdin
-    const markdown = new Markdown(content, 1, 1, markdownTheme, defaultTextStyle);
+    const markdown = new Markdown(
+      content,
+      1,
+      1,
+      markdownTheme,
+      defaultTextStyle,
+    );
     const { pager, statusBar } = buildPager(
       markdown,
       filePath,

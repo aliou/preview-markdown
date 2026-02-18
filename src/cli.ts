@@ -62,12 +62,12 @@ export function parseArgs(args: string[]): CliOptions {
       const next = args[i + 1];
       if (next !== undefined && !next.startsWith("-")) {
         const n = parseInt(next, 10);
-        options.depth = isNaN(n) || n < 1 ? 1 : n;
+        options.depth = Number.isNaN(n) || n < 1 ? 1 : n;
         i++;
       }
     } else if (arg?.startsWith("--depth=")) {
       const n = parseInt(arg.slice(8), 10);
-      options.depth = isNaN(n) || n < 1 ? 1 : n;
+      options.depth = Number.isNaN(n) || n < 1 ? 1 : n;
     } else if (arg === "--completion") {
       const next = args[i + 1];
       if (next !== undefined && !next.startsWith("-")) {

@@ -25,7 +25,8 @@ const COLOR_SCHEME_LIGHT = "\x1b[?997;2n";
 
 export type ColorScheme = "light" | "dark";
 
-const MINI_HELP = "  enter open  •  j/k move  •  / filter  •  ? help  •  q quit";
+const MINI_HELP =
+  "  enter open  •  j/k move  •  / filter  •  ? help  •  q quit";
 
 // Two-column help displayed as a full-screen overlay.
 const HELP_LINES = [
@@ -271,7 +272,11 @@ export class Browser implements Component {
   }
 
   // Render a single 3-line item: gutter+bullet+name, timestamp, blank.
-  private renderItem(entry: Entry, isSelected: boolean, width: number): string[] {
+  private renderItem(
+    entry: Entry,
+    isSelected: boolean,
+    width: number,
+  ): string[] {
     const gutter = isSelected ? "│ " : "  ";
     const bullet = "\u2022 "; // •
     const prefix = gutter + bullet; // 4 chars
@@ -280,7 +285,7 @@ export class Browser implements Component {
     const nameAvail = Math.max(0, width - prefix.length);
     let name = entry.relativePath;
     if (name.length > nameAvail) {
-      name = name.slice(0, nameAvail - 1) + "\u2026";
+      name = `${name.slice(0, nameAvail - 1)}\u2026`;
     }
     const nameLine =
       prefix + name + " ".repeat(Math.max(0, nameAvail - name.length));
@@ -288,8 +293,7 @@ export class Browser implements Component {
     // Line 2: relative timestamp, indented to align with the filename.
     const timeIndent = "    "; // same width as prefix
     const timeStr = timeIndent + relativeTime(entry.mtime);
-    const timeLine =
-      timeStr + " ".repeat(Math.max(0, width - timeStr.length));
+    const timeLine = timeStr + " ".repeat(Math.max(0, width - timeStr.length));
 
     // Line 3: blank separator.
     const blankLine = " ".repeat(width);
@@ -364,8 +368,7 @@ export class Browser implements Component {
           : "No markdown files found.";
       for (let i = 0; i < listHeight; i++) {
         if (i === Math.floor(listHeight / 2)) {
-          const padded =
-            `  ${msg}` + " ".repeat(Math.max(0, width - msg.length - 2));
+          const padded = `  ${msg}${" ".repeat(Math.max(0, width - msg.length - 2))}`;
           lines.push(this.bgColor(this.dimColor(padded)));
         } else {
           lines.push(emptyLine);
