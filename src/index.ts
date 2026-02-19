@@ -5,16 +5,12 @@ import {
   type Component,
   Markdown,
   ProcessTerminal,
+  Spacer,
   TUI,
   visibleWidth,
 } from "@mariozechner/pi-tui";
 import chalk from "chalk";
-import {
-  Browser,
-  BrowserStatusBar,
-  type Entry,
-  scanDirectory,
-} from "./browser.js";
+import { Browser, type Entry, scanDirectory } from "./browser.js";
 import { parseArgs, printCompletion, printHelp, printVersion } from "./cli.js";
 import { type ColorScheme, detectColorScheme } from "./color-scheme.js";
 import { getThemeName, loadConfig, saveDefaultConfig } from "./config.js";
@@ -38,6 +34,9 @@ const EXIT_ALT_SCREEN = "\x1b[?1049l";
 // Mode 2031: color scheme change notifications
 const ENABLE_COLOR_SCHEME_REPORTING = "\x1b[?2031h";
 const DISABLE_COLOR_SCHEME_REPORTING = "\x1b[?2031l";
+
+// Markdown content padding for a balanced reading layout
+const CONTENT_PADDING_X = 2;
 
 function enterAlternateScreen(): void {
   process.stdout.write(ENTER_ALT_SCREEN);
@@ -166,6 +165,22 @@ class StatusBar implements Component {
   }
 }
 
+async function buildContentComponent(
+  content: string,
+  markdownTheme: ReturnType<typeof buildMarkdownTheme>,
+  defaultTextStyle: ReturnType<typeof buildDefaultTextStyle>,
+  maxMermaidWidth: number,
+): Promise<Component> {
+  const preprocessed = await preprocessMermaid(content, maxMermaidWidth);
+  return new Markdown(
+    preprocessed,
+    CONTENT_PADDING_X,
+    1,
+    markdownTheme,
+    defaultTextStyle,
+  );
+}
+
 async function renderWithoutPager(
   content: string,
   theme: ResolvedTheme,
@@ -177,10 +192,19 @@ async function renderWithoutPager(
   const markdownTheme = buildMarkdownTheme(theme.colors, highlightCode);
   const defaultTextStyle = buildDefaultTextStyle(theme.colors);
 
-  const markdown = new Markdown(content, 1, 0, markdownTheme, defaultTextStyle);
   const terminalWidth = process.stdout.columns || 80;
   const width =
     wrapWidth > 0 ? Math.min(wrapWidth, terminalWidth) : terminalWidth;
+  const mermaidWidth = Math.max(20, width - CONTENT_PADDING_X * 2);
+  const preprocessed = await preprocessMermaid(content, mermaidWidth);
+
+  const markdown = new Markdown(
+    preprocessed,
+    CONTENT_PADDING_X,
+    0,
+    markdownTheme,
+    defaultTextStyle,
+  );
   const lines = markdown.render(width);
 
   for (const line of lines) {
@@ -260,11 +284,9 @@ async function main(): Promise<void> {
   if (mode === "viewer" && filePath) {
     content = fs.readFileSync(filePath, "utf8");
     if (filePath.endsWith(".mdx")) content = preprocessMdx(content);
-    content = preprocessMermaid(content);
     filename = filePath;
   } else if (mode === "stdin") {
     content = await readStdin();
-    content = preprocessMermaid(content);
     filename = "stdin";
   }
 
@@ -313,6 +335,14 @@ async function main(): Promise<void> {
   tui.addChild(statusSwitcher);
   tui.setFocus(mainSwitcher);
 
+  const getMermaidMaxWidth = (): number => {
+    const targetWidth =
+      options.width > 0
+        ? Math.min(options.width, terminal.columns)
+        : terminal.columns;
+    return Math.max(20, targetWidth - CONTENT_PADDING_X * 2);
+  };
+
   const showLineNumbers = options.lineNumbers || config.showLineNumbers;
 
   // --- Color factories (rebuilt on theme change) ---
@@ -349,9 +379,11 @@ async function main(): Promise<void> {
   let activeFilePath: string | null = null;
   let activeFileWatcher: ReturnType<typeof watchFile> | null = null;
 
+  // Browser uses header-only chrome, no bottom status bar.
+  const emptyStatus = new Spacer(0);
+
   // --- Browser components (null in viewer/stdin mode) ---
   let browser: Browser | null = null;
-  let browserStatusBar: BrowserStatusBar | null = null;
 
   // --- Color scheme change handler ---
   // Called by both Browser and Pager when they detect a terminal color change.
@@ -371,10 +403,6 @@ async function main(): Promise<void> {
     if (browser) {
       browser.updateColors(buildBrowserColors());
     }
-    if (browserStatusBar) {
-      const sc = buildStatusBarColors();
-      browserStatusBar.updateColors(sc.bgColor, sc.fgColor);
-    }
 
     // Update active pager colors (only if pager is currently shown)
     if (activePager && mainSwitcher.getActive() === activePager) {
@@ -383,15 +411,13 @@ async function main(): Promise<void> {
           let newContent = fs.readFileSync(activeFilePath, "utf8");
           if (activeFilePath.endsWith(".mdx"))
             newContent = preprocessMdx(newContent);
-          newContent = preprocessMermaid(newContent);
-          const newMarkdown = new Markdown(
+          const newComponent = await buildContentComponent(
             newContent,
-            1,
-            1,
             markdownTheme,
             defaultTextStyle,
+            getMermaidMaxWidth(),
           );
-          activePager.setContent(newMarkdown);
+          activePager.setContent(newComponent);
         } catch {
           // File temporarily unavailable
         }
@@ -423,11 +449,10 @@ async function main(): Promise<void> {
         activeFileWatcher?.stop();
         activeFileWatcher = null;
 
-        if (fromBrowser && browser && browserStatusBar) {
+        if (fromBrowser && browser) {
           // Return to directory browser
-          browser.setViewportHeight(terminal.rows - 1);
           mainSwitcher.setActive(browser);
-          statusSwitcher.setActive(browserStatusBar);
+          statusSwitcher.setActive(emptyStatus);
           tui.requestRender(true);
         } else {
           tui.stop();
@@ -437,48 +462,48 @@ async function main(): Promise<void> {
       },
       onReload: () => {
         if (!pagerFilePath) return;
-        try {
-          let newContent = fs.readFileSync(pagerFilePath, "utf8");
-          if (pagerFilePath.endsWith(".mdx"))
-            newContent = preprocessMdx(newContent);
-          newContent = preprocessMermaid(newContent);
-          const newMarkdown = new Markdown(
-            newContent,
-            1,
-            1,
-            markdownTheme,
-            defaultTextStyle,
-          );
-          pager.setContent(newMarkdown);
-          pager.setFileChanged(false);
-          tui.requestRender(true);
-        } catch {
-          // File temporarily unavailable during save
-        }
+        void (async () => {
+          try {
+            let newContent = fs.readFileSync(pagerFilePath, "utf8");
+            if (pagerFilePath.endsWith(".mdx"))
+              newContent = preprocessMdx(newContent);
+            const newComponent = await buildContentComponent(
+              newContent,
+              markdownTheme,
+              defaultTextStyle,
+              getMermaidMaxWidth(),
+            );
+            pager.setContent(newComponent);
+            pager.setFileChanged(false);
+            tui.requestRender(true);
+          } catch {
+            // File temporarily unavailable during save
+          }
+        })();
       },
       onEdit: (lineNumber) => {
         if (!pagerFilePath) return;
         exitAlternateScreen();
         tui.stop();
         openInEditor(pagerFilePath, lineNumber);
-        try {
-          let newContent = fs.readFileSync(pagerFilePath, "utf8");
-          if (pagerFilePath.endsWith(".mdx"))
-            newContent = preprocessMdx(newContent);
-          newContent = preprocessMermaid(newContent);
-          const newMarkdown = new Markdown(
-            newContent,
-            1,
-            1,
-            markdownTheme,
-            defaultTextStyle,
-          );
-          pager.setContent(newMarkdown);
-        } catch {
-          // Ignore read errors after edit
-        }
-        enterAlternateScreen();
-        tui.start();
+        void (async () => {
+          try {
+            let newContent = fs.readFileSync(pagerFilePath, "utf8");
+            if (pagerFilePath.endsWith(".mdx"))
+              newContent = preprocessMdx(newContent);
+            const newComponent = await buildContentComponent(
+              newContent,
+              markdownTheme,
+              defaultTextStyle,
+              getMermaidMaxWidth(),
+            );
+            pager.setContent(newComponent);
+          } catch {
+            // Ignore read errors after edit
+          }
+          enterAlternateScreen();
+          tui.start();
+        })();
       },
       onSuspend: () => {
         exitAlternateScreen();
@@ -504,45 +529,45 @@ async function main(): Promise<void> {
 
   // --- Open a file from the browser ---
   function openFileFromBrowser(entry: Entry): void {
-    let fileContent: string;
-    try {
-      fileContent = fs.readFileSync(entry.absolutePath, "utf8");
-    } catch {
-      return; // Can't read file — stay in browser
-    }
+    void (async () => {
+      let fileContent: string;
+      try {
+        fileContent = fs.readFileSync(entry.absolutePath, "utf8");
+      } catch {
+        return; // Can't read file — stay in browser
+      }
 
-    if (entry.absolutePath.endsWith(".mdx"))
-      fileContent = preprocessMdx(fileContent);
-    fileContent = preprocessMermaid(fileContent);
+      if (entry.absolutePath.endsWith(".mdx"))
+        fileContent = preprocessMdx(fileContent);
 
-    const markdown = new Markdown(
-      fileContent,
-      1,
-      1,
-      markdownTheme,
-      defaultTextStyle,
-    );
-    const { pager, statusBar } = buildPager(
-      markdown,
-      entry.absolutePath,
-      entry.relativePath,
-      true,
-    );
+      const contentComponent = await buildContentComponent(
+        fileContent,
+        markdownTheme,
+        defaultTextStyle,
+        getMermaidMaxWidth(),
+      );
+      const { pager, statusBar } = buildPager(
+        contentComponent,
+        entry.absolutePath,
+        entry.relativePath,
+        true,
+      );
 
-    activePager = pager;
-    activeStatusBar = statusBar;
-    activeFilePath = entry.absolutePath;
+      activePager = pager;
+      activeStatusBar = statusBar;
+      activeFilePath = entry.absolutePath;
 
-    activeFileWatcher = watchFile(entry.absolutePath, () => {
-      pager.setFileChanged(true);
+      activeFileWatcher = watchFile(entry.absolutePath, () => {
+        pager.setFileChanged(true);
+        tui.requestRender(true);
+      });
+      activeFileWatcher.start();
+
+      mainSwitcher.setActive(pager);
+      statusSwitcher.setActive(statusBar);
+      pager.setViewportHeight(getMainViewportHeight());
       tui.requestRender(true);
-    });
-    activeFileWatcher.start();
-
-    pager.setViewportHeight(terminal.rows - 1);
-    mainSwitcher.setActive(pager);
-    statusSwitcher.setActive(statusBar);
-    tui.requestRender(true);
+    })();
   }
 
   // --- Initial mode setup ---
@@ -551,6 +576,7 @@ async function main(): Promise<void> {
     const entries = scanDirectory(baseDir, options.depth);
     browser = new Browser({
       entries,
+      baseDir,
       onOpen: openFileFromBrowser,
       onQuit: () => {
         tui.stop();
@@ -561,28 +587,19 @@ async function main(): Promise<void> {
       ...buildBrowserColors(),
     });
 
-    const sc = buildStatusBarColors();
-    browserStatusBar = new BrowserStatusBar(
-      browser,
-      baseDir,
-      sc.bgColor,
-      sc.fgColor,
-    );
-
-    browser.setViewportHeight(terminal.rows - 1);
     mainSwitcher.setActive(browser);
-    statusSwitcher.setActive(browserStatusBar);
+    statusSwitcher.setActive(emptyStatus);
+    browser.setViewportHeight(getMainViewportHeight());
   } else {
     // viewer or stdin
-    const markdown = new Markdown(
+    const contentComponent = await buildContentComponent(
       content,
-      1,
-      1,
       markdownTheme,
       defaultTextStyle,
+      getMermaidMaxWidth(),
     );
     const { pager, statusBar } = buildPager(
-      markdown,
+      contentComponent,
       filePath,
       filename,
       false,
@@ -599,12 +616,20 @@ async function main(): Promise<void> {
       });
     }
 
-    pager.setViewportHeight(terminal.rows - 1);
     mainSwitcher.setActive(pager);
     statusSwitcher.setActive(statusBar);
+    pager.setViewportHeight(getMainViewportHeight());
   }
 
   // --- TUI lifecycle wrappers ---
+
+  function getStatusLineCount(): number {
+    return statusSwitcher.getActive() === emptyStatus ? 0 : 1;
+  }
+
+  function getMainViewportHeight(): number {
+    return Math.max(0, terminal.rows - getStatusLineCount());
+  }
 
   // Sets viewport height on whichever component is currently the main content.
   function setActiveViewportHeight(h: number): void {
@@ -620,12 +645,12 @@ async function main(): Promise<void> {
   tui.start = () => {
     enterAlternateScreen();
     originalStart();
-    setActiveViewportHeight(terminal.rows - 1);
+    setActiveViewportHeight(getMainViewportHeight());
   };
 
   const originalRequestRender = tui.requestRender.bind(tui);
   tui.requestRender = (force?: boolean) => {
-    setActiveViewportHeight(terminal.rows - 1);
+    setActiveViewportHeight(getMainViewportHeight());
     originalRequestRender(force);
   };
 

@@ -1,15 +1,5 @@
 import type { Component } from "@mariozechner/pi-tui";
-import {
-  isArrowDown,
-  isArrowUp,
-  isBackspace,
-  isCtrlC,
-  isCtrlZ,
-  isEnd,
-  isEnter,
-  isEscape,
-  isHome,
-} from "@mariozechner/pi-tui";
+import { Key, matchesKey, visibleWidth } from "@mariozechner/pi-tui";
 
 // Strip ANSI escape codes for text searching
 const ANSI_REGEX = /\x1b\[[0-9;]*m/g;
@@ -207,17 +197,20 @@ export class Pager implements Component {
     const end = Math.min(start + contentHeight, totalLines);
     const sliced = this.cachedLines.slice(start, end);
 
-    // Add line numbers if enabled
+    // Add line numbers if enabled, always extending line bg to viewport width
     const visible: string[] = [];
     for (let i = 0; i < sliced.length; i++) {
       const lineNum = start + i + 1; // 1-based line numbers
       const line = sliced[i] ?? "";
-      if (this.showLineNumbers) {
-        const numStr = lineNum.toString().padStart(4, " ");
-        visible.push(`${this.lineNumberColor(numStr)} ${line}`);
-      } else {
-        visible.push(line);
-      }
+
+      const rendered = this.showLineNumbers
+        ? `${this.lineNumberColor(lineNum.toString().padStart(4, " "))} ${line}`
+        : line;
+
+      const pad = Math.max(0, width - visibleWidth(rendered));
+      visible.push(
+        pad > 0 ? `${rendered}${this.bgColor(" ".repeat(pad))}` : rendered,
+      );
     }
 
     // Pad content to fill its area (with background)
@@ -299,7 +292,7 @@ export class Pager implements Component {
     }
 
     // Handle Ctrl-Z (suspend)
-    if (isCtrlZ(data)) {
+    if (matchesKey(data, Key.ctrl("z"))) {
       if (this.onSuspend) {
         this.onSuspend();
       }
@@ -360,17 +353,22 @@ export class Pager implements Component {
       return;
     }
 
-    if (isCtrlC(data) || isEscape(data) || data === "q" || data === "Q") {
+    if (
+      matchesKey(data, Key.ctrl("c")) ||
+      matchesKey(data, Key.escape) ||
+      data === "q" ||
+      data === "Q"
+    ) {
       this.onExit();
       return;
     }
 
-    if (isArrowUp(data) || data === "k") {
+    if (matchesKey(data, Key.up) || data === "k") {
       this.scrollOffset = Math.max(0, this.scrollOffset - 1);
       return;
     }
 
-    if (isArrowDown(data) || data === "j") {
+    if (matchesKey(data, Key.down) || data === "j") {
       this.scrollOffset = Math.min(maxScroll, this.scrollOffset + 1);
       return;
     }
@@ -388,13 +386,13 @@ export class Pager implements Component {
     }
 
     // Home / go to top
-    if (isHome(data) || data === "g") {
+    if (matchesKey(data, Key.home) || data === "g") {
       this.scrollOffset = 0;
       return;
     }
 
     // End / go to bottom
-    if (isEnd(data) || data === "G") {
+    if (matchesKey(data, Key.end) || data === "G") {
       this.scrollOffset = maxScroll;
       return;
     }
@@ -420,7 +418,7 @@ export class Pager implements Component {
 
   private handleSearchInput(data: string): void {
     // Cancel search
-    if (isEscape(data) || isCtrlC(data)) {
+    if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
       this.searchMode = false;
       this.searchQuery = "";
       this.searchMatches = [];
@@ -429,7 +427,7 @@ export class Pager implements Component {
     }
 
     // Confirm search
-    if (isEnter(data)) {
+    if (matchesKey(data, Key.enter)) {
       this.searchMode = false;
       if (this.searchQuery.length > 0) {
         this.performSearch();
@@ -439,7 +437,7 @@ export class Pager implements Component {
     }
 
     // Backspace
-    if (isBackspace(data)) {
+    if (matchesKey(data, Key.backspace)) {
       this.searchQuery = this.searchQuery.slice(0, -1);
       return;
     }

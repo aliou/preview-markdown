@@ -39,6 +39,7 @@ export interface MarkdownColors {
   link: string;
   linkUrl: string;
   code: string;
+  codeBlockBackground: string;
   codeBlockBorder: string;
   quote: string;
   quoteBorder: string;
@@ -200,6 +201,9 @@ export function deriveMarkdownColors(theme: TextMateTheme): MarkdownColors {
     ? lighten(background, 0.1)
     : darken(background, 0.05);
   const helpBg = isDark ? lighten(background, 0.05) : darken(background, 0.02);
+  const codeBlockBackground = isDark
+    ? lighten(background, 0.06)
+    : darken(background, 0.04);
 
   return {
     background,
@@ -208,6 +212,7 @@ export function deriveMarkdownColors(theme: TextMateTheme): MarkdownColors {
     link,
     linkUrl: comment,
     code,
+    codeBlockBackground,
     codeBlockBorder: comment,
     quote,
     quoteBorder: comment,
@@ -310,7 +315,7 @@ export function buildMarkdownTheme(
     link: chalk.hex(colors.link),
     linkUrl: chalk.hex(colors.linkUrl),
     code: chalk.hex(colors.code),
-    codeBlock: chalk.hex(colors.foreground),
+    codeBlock: chalk.hex(colors.foreground).bgHex(colors.codeBlockBackground),
     codeBlockBorder: chalk.hex(colors.codeBlockBorder),
     quote: chalk.hex(colors.quote),
     quoteBorder: chalk.hex(colors.quoteBorder),

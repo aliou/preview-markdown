@@ -5,7 +5,10 @@ import { Key, matchesKey } from "@mariozechner/pi-tui";
 
 const MD_EXTENSIONS = new Set([".md", ".markdown", ".mdx"]);
 
-// Lines rendered per list item: filename, timestamp, blank separator.
+// Header lines rendered above the file list.
+const HEADER_HEIGHT = 2;
+
+// Lines rendered per list item: filename, metadata, blank separator.
 const ITEM_HEIGHT = 3;
 
 const PAGE_UP_SEQUENCES = ["\x1b[5~", "\x1b[5;1~"];
@@ -55,10 +58,22 @@ function relativeTime(mtime: Date): string {
   return `${years} year${years === 1 ? "" : "s"} ago`;
 }
 
+function formatDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function hasValidCreationTime(createdAt: Date, updatedAt: Date): boolean {
+  return createdAt.getTime() > 0 && createdAt.getTime() <= updatedAt.getTime();
+}
+
 export interface Entry {
   absolutePath: string;
   relativePath: string;
-  mtime: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 /**
@@ -116,7 +131,8 @@ export function scanDirectory(baseDir: string, maxDepth: number): Entry[] {
             entries.push({
               absolutePath: fullPath,
               relativePath: path.relative(baseDir, fullPath),
-              mtime: stat.mtime,
+              createdAt: stat.birthtime,
+              updatedAt: stat.mtime,
             });
           }
         }
@@ -128,16 +144,20 @@ export function scanDirectory(baseDir: string, maxDepth: number): Entry[] {
       } else if (item.isFile()) {
         const ext = path.extname(item.name).toLowerCase();
         if (MD_EXTENSIONS.has(ext)) {
-          let mtime = new Date(0);
+          let createdAt = new Date(0);
+          let updatedAt = new Date(0);
           try {
-            mtime = fs.statSync(fullPath).mtime;
+            const stat = fs.statSync(fullPath);
+            createdAt = stat.birthtime;
+            updatedAt = stat.mtime;
           } catch {
-            // Leave mtime as epoch on error.
+            // Leave timestamps as epoch on error.
           }
           entries.push({
             absolutePath: fullPath,
             relativePath: path.relative(baseDir, fullPath),
-            mtime,
+            createdAt,
+            updatedAt,
           });
         }
       }
@@ -164,6 +184,7 @@ export interface BrowserColors {
 
 export interface BrowserOptions extends BrowserColors {
   entries: Entry[];
+  baseDir: string;
   onOpen: (entry: Entry) => void;
   onQuit: () => void;
   onColorSchemeChange?: (scheme: ColorScheme) => void;
@@ -171,6 +192,7 @@ export interface BrowserOptions extends BrowserColors {
 
 export class Browser implements Component {
   private entries: Entry[];
+  private baseDir: string;
   private filtered: Entry[];
   private cursor = 0;
   private scrollOffset = 0; // In items, not lines.
@@ -192,6 +214,7 @@ export class Browser implements Component {
 
   constructor(options: BrowserOptions) {
     this.entries = options.entries;
+    this.baseDir = options.baseDir;
     this.filtered = [...options.entries];
     this.onOpen = options.onOpen;
     this.onQuit = options.onQuit;
@@ -225,20 +248,11 @@ export class Browser implements Component {
       this.filterFgColor = colors.filterFgColor;
   }
 
-  getStatusInfo(): { selected: number; total: number; filter: string | null } {
-    return {
-      selected: this.filtered.length > 0 ? this.cursor + 1 : 0,
-      total: this.filtered.length,
-      filter: this.filterQuery.length > 0 ? this.filterQuery : null,
-    };
-  }
-
-  // Lines available for list content. The bottom line is always reserved for
-  // the mini help or filter input. When the help overlay is shown it takes
-  // the full viewport so there is no list area.
+  // Lines available for list content. Top header and bottom help/filter lines
+  // are reserved. When help overlay is shown it takes the full viewport.
   private getListHeight(): number {
     if (this.showingHelp) return 0;
-    return Math.max(0, this.viewportHeight - 1);
+    return Math.max(0, this.viewportHeight - HEADER_HEIGHT - 1);
   }
 
   // How many 3-line items fit in the current list area.
@@ -290,10 +304,17 @@ export class Browser implements Component {
     const nameLine =
       prefix + name + " ".repeat(Math.max(0, nameAvail - name.length));
 
-    // Line 2: relative timestamp, indented to align with the filename.
+    // Line 2: created + updated metadata, indented to align with filename.
     const timeIndent = "    "; // same width as prefix
-    const timeStr = timeIndent + relativeTime(entry.mtime);
-    const timeLine = timeStr + " ".repeat(Math.max(0, width - timeStr.length));
+    const created = hasValidCreationTime(entry.createdAt, entry.updatedAt)
+      ? formatDate(entry.createdAt)
+      : "unknown";
+    const updated = `${formatDate(entry.updatedAt)} (${relativeTime(entry.updatedAt)})`;
+    const meta = `${timeIndent}c ${created}  •  u ${updated}`;
+    const timeLine =
+      meta.length < width
+        ? meta + " ".repeat(width - meta.length)
+        : `${meta.slice(0, Math.max(0, width - 1))}…`;
 
     // Line 3: blank separator.
     const blankLine = " ".repeat(width);
@@ -310,6 +331,37 @@ export class Browser implements Component {
       bg(this.fgColor(nameLine)),
       bg(this.dimColor(timeLine)),
       bg(blankLine),
+    ];
+  }
+
+  private renderHeader(width: number): string[] {
+    const total = this.filtered.length;
+    const selected = total > 0 ? this.cursor + 1 : 0;
+
+    const home = process.env.HOME ?? "";
+    const displayBase =
+      home && this.baseDir.startsWith(home)
+        ? `~${this.baseDir.slice(home.length)}`
+        : this.baseDir;
+
+    const filterLabel =
+      this.filterQuery.length > 0 ? ` • /${this.filterQuery}` : "";
+    const left = ` ${displayBase}${filterLabel}`;
+    const right = ` ${selected}/${total} docs `;
+
+    const available = Math.max(0, width - right.length);
+    const leftTruncated =
+      left.length > available
+        ? `${left.slice(0, Math.max(0, available - 1))}…`
+        : left;
+    const padding = Math.max(0, width - leftTruncated.length - right.length);
+    const firstLine = leftTruncated + " ".repeat(padding) + right;
+
+    const divider = "─".repeat(Math.max(0, width));
+
+    return [
+      this.bgColor(this.fgColor(firstLine)),
+      this.bgColor(this.dimColor(divider)),
     ];
   }
 
@@ -361,6 +413,8 @@ export class Browser implements Component {
     const lines: string[] = [];
     const emptyLine = this.bgColor(" ".repeat(width));
 
+    lines.push(...this.renderHeader(width));
+
     if (this.filtered.length === 0) {
       const msg =
         this.filterQuery.length > 0
@@ -386,7 +440,7 @@ export class Browser implements Component {
       }
 
       // Pad remaining list area.
-      while (lines.length < listHeight) {
+      while (lines.length < HEADER_HEIGHT + listHeight) {
         lines.push(emptyLine);
       }
     }
@@ -516,64 +570,5 @@ export class Browser implements Component {
       this.applyFilter();
       return;
     }
-  }
-}
-
-export class BrowserStatusBar implements Component {
-  private browser: Browser;
-  private baseDir: string;
-  private bgColor: (text: string) => string;
-  private fgColor: (text: string) => string;
-
-  constructor(
-    browser: Browser,
-    baseDir: string,
-    bgColor: (text: string) => string,
-    fgColor: (text: string) => string,
-  ) {
-    this.browser = browser;
-    this.baseDir = baseDir;
-    this.bgColor = bgColor;
-    this.fgColor = fgColor;
-  }
-
-  updateColors(
-    bgColor: (text: string) => string,
-    fgColor: (text: string) => string,
-  ): void {
-    this.bgColor = bgColor;
-    this.fgColor = fgColor;
-  }
-
-  invalidate(): void {}
-
-  render(width: number): string[] {
-    const info = this.browser.getStatusInfo();
-
-    const countStr = ` ${info.selected}/${info.total} `;
-    const filterStr = info.filter ? ` [/${info.filter}] ` : "";
-    const right = filterStr + countStr;
-
-    // Show home-shortened path for readability.
-    const home = process.env.HOME ?? "";
-    const displayBase =
-      home && this.baseDir.startsWith(home)
-        ? `~${this.baseDir.slice(home.length)}`
-        : this.baseDir;
-    const dirLabel = ` ${displayBase}`;
-
-    const available = width - right.length;
-    let displayDir = dirLabel;
-    if (displayDir.length > available) {
-      let truncated = displayDir;
-      while (truncated.length > available - 1 && truncated.length > 0) {
-        truncated = truncated.slice(1);
-      }
-      displayDir = `\u2026${truncated}`;
-    }
-
-    const padding = Math.max(0, width - displayDir.length - right.length);
-    const line = displayDir + " ".repeat(padding) + right;
-    return [this.bgColor(this.fgColor(line))];
   }
 }
