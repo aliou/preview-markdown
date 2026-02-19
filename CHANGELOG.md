@@ -1,5 +1,12 @@
 # preview-markdown
 
+## 0.4.0
+
+### Minor Changes
+
+- 1e9cfa5: Add directory browser mode. Running `pmd` or `pmd <dir>` opens a TUI file browser with keyboard navigation, live filtering, relative timestamps, and seamless transition into the pager when a file is selected.
+- 2b479a4: Polish browsing and reading UX: update `@mariozechner/pi-tui` to latest, refresh code block rendering with full-width separators and subtle background, improve browser header/metadata (including created + updated dates), remove redundant browser status bar, and keep Mermaid rendering as ASCII-only output.
+
 ## 0.3.0
 
 ### Minor Changes
