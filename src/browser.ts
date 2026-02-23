@@ -164,7 +164,7 @@ export function scanDirectory(baseDir: string, maxDepth: number): Entry[] {
     }
   }
 
-  recurse(baseDir, 1);
+  recurse(baseDir, 0);
   entries.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
   return entries;
 }

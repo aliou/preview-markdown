@@ -108,7 +108,7 @@ ${bold("Available Commands:")}
 
 ${bold("Flags:")}
   -h, --help            help for ${APP_NAME}
-  -d, --depth uint      directory browser recursion depth ${dim("(default: 1, top-level only)")}
+  -d, --depth uint      directory browser recursion depth ${dim("(default: 1, includes direct subdirectories)")}
   -l, --line-numbers    show line numbers ${dim("(pager only)")}
   -n, --no-pager        display rendered markdown without pager ${dim("(files only, not directories)")}
       --light           force light mode
