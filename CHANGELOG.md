@@ -1,5 +1,11 @@
 # preview-markdown
 
+## 0.4.1
+
+### Patch Changes
+
+- 17ba1e9: Fix off-by-one in directory scan depth: `--depth 1` (default) now includes files in direct subdirectories, `--depth 0` means top-level only.
+
 ## 0.4.0
 
 ### Minor Changes
