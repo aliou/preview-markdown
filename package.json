@@ -9,19 +9,21 @@
     "pmd": "src/index.ts"
   },
   "scripts": {
-    "start": "bun run src/index.ts",
+    "start": "tsx src/index.ts",
     "lint": "biome check",
     "format": "biome check --write",
     "typecheck": "tsc --noEmit",
-    "build": "bun run scripts/build.ts",
+    "build": "node scripts/build.mjs",
     "changeset": "changeset",
-    "version": "bun run scripts/version.ts"
+    "version": "node scripts/version.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.0.0",
     "@changesets/cli": "^2.29.8",
-    "@types/bun": "latest",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "tsdown": "^0.21.0-beta.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.3"
   },
   "peerDependencies": {
     "typescript": "^5"
@@ -31,8 +33,5 @@
     "beautiful-mermaid": "^0.1.3",
     "chalk": "^5.6.2",
     "shiki": "^3.20.0"
-  },
-  "patchedDependencies": {
-    "@mariozechner/pi-tui@0.53.0": "patches/@mariozechner%2Fpi-tui@0.53.0.patch"
   }
 }
