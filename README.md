@@ -137,6 +137,17 @@ pmd completion zsh > ~/.zsh/completions/_pmd
 pmd completion fish > ~/.config/fish/completions/pmd.fish
 ```
 
+## Build binaries (Node SEA)
+
+```bash
+npm run build
+```
+
+Notes:
+- Requires Node >= 25.5.0 (tsdown SEA support).
+- Builds only for the current host platform/arch.
+- Output is written as `dist/pmd-<platform>-<arch>`.
+
 ## Configuration
 
 Create a config file with `pmd config` or manually at `~/.config/pmd/config.json`.

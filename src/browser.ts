@@ -29,7 +29,7 @@ const COLOR_SCHEME_LIGHT = "\x1b[?997;2n";
 export type ColorScheme = "light" | "dark";
 
 const MINI_HELP =
-  "  enter open  •  j/k move  •  / filter  •  ? help  •  q quit";
+  "  enter open  •  j/k move  •  / filter  •  ? help  •  s cycle sort  •  r reverse sort  •  q quit";
 
 // Two-column help displayed as a full-screen overlay.
 const HELP_LINES = [
@@ -38,7 +38,7 @@ const HELP_LINES = [
   "  f / PgDn  page down          /           filter files",
   "  b / PgUp  page up            Esc         clear filter",
   "  Enter     open file          ?           close help",
-  "                               q / Esc     quit",
+  "  s           cycle sort         r           reverse sort",
 ];
 
 function relativeTime(mtime: Date): string {
@@ -200,6 +200,8 @@ export class Browser implements Component {
   private filterQuery = "";
   private filterMode = false;
   private showingHelp = false;
+  private sortKey: "path" | "created" | "updated" = "path";
+  private sortDirection: "asc" | "desc" = "asc";
   private onOpen: (entry: Entry) => void;
   private onQuit: () => void;
   private onColorSchemeChange?: (scheme: ColorScheme) => void;
@@ -271,6 +273,26 @@ export class Browser implements Component {
     }
     this.cursor = 0;
     this.scrollOffset = 0;
+  }
+
+  private applySort(): void {
+    const comparator = (a: Entry, b: Entry): number => {
+      let comparison = 0;
+      switch (this.sortKey) {
+        case "path":
+          comparison = a.relativePath.localeCompare(b.relativePath);
+          break;
+        case "created":
+          comparison = a.createdAt.getTime() - b.createdAt.getTime();
+          break;
+        case "updated":
+          comparison = a.updatedAt.getTime() - b.updatedAt.getTime();
+          break;
+      }
+      return this.sortDirection === "asc" ? comparison : -comparison;
+    };
+    this.entries.sort(comparator);
+    this.applyFilter();
   }
 
   private ensureCursorVisible(): void {
@@ -346,7 +368,8 @@ export class Browser implements Component {
 
     const filterLabel =
       this.filterQuery.length > 0 ? ` • /${this.filterQuery}` : "";
-    const left = ` ${displayBase}${filterLabel}`;
+    const sortLabel = this.getSortLabel();
+    const left = ` ${displayBase}${filterLabel}${sortLabel}`;
     const right = ` ${selected}/${total} docs `;
 
     const available = Math.max(0, width - right.length);
@@ -363,6 +386,23 @@ export class Browser implements Component {
       this.bgColor(this.fgColor(firstLine)),
       this.bgColor(this.dimColor(divider)),
     ];
+  }
+
+  private getSortLabel(): string {
+    let keyLabel = "";
+    switch (this.sortKey) {
+      case "path":
+        keyLabel = "name";
+        break;
+      case "created":
+        keyLabel = "created";
+        break;
+      case "updated":
+        keyLabel = "updated";
+        break;
+    }
+    const arrow = this.sortDirection === "asc" ? "▲" : "▼";
+    return ` • ${keyLabel}${arrow}`;
   }
 
   private renderMiniHelp(width: number): string {
@@ -499,6 +539,30 @@ export class Browser implements Component {
       this.filterMode = true;
       this.filterQuery = "";
       this.applyFilter();
+      return;
+    }
+
+    // Cycle sort key
+    if (data === "s" || data === "S") {
+      if (!this.filterMode && !this.showingHelp) {
+        if (this.sortKey === "path") {
+          this.sortKey = "created";
+        } else if (this.sortKey === "created") {
+          this.sortKey = "updated";
+        } else {
+          this.sortKey = "path";
+        }
+        this.applySort();
+      }
+      return;
+    }
+
+    // Toggle sort direction
+    if (data === "r" || data === "R") {
+      if (!this.filterMode && !this.showingHelp) {
+        this.sortDirection = this.sortDirection === "asc" ? "desc" : "asc";
+        this.applySort();
+      }
       return;
     }
 
