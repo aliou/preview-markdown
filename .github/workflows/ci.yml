@@ -19,16 +19,51 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: "25"
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: npm ci
 
       - name: Lint
-        run: bun run lint
+        run: npm run lint
 
       - name: Type Check
-        run: bun run typecheck
+        run: npm run typecheck
+
+  build-binaries:
+    name: Build ${{ matrix.asset }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04-arm
+            asset: pmd-linux-arm64
+          - runner: macos-latest
+            asset: pmd-darwin-arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "25"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build SEA binary
+        run: npm run build
+
+      - name: Verify binary
+        run: |
+          if [ ! -f dist/${{ matrix.asset }} ]; then
+            echo "ERROR: expected dist/${{ matrix.asset }}"
+            ls -la dist/
+            exit 1
+          fi
