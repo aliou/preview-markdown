@@ -6,7 +6,6 @@ export interface CliOptions {
   initConfig: boolean;
   light: boolean;
   dark: boolean;
-  noPager: boolean;
   lineNumbers: boolean;
   width: number;
   depth: number;
@@ -23,7 +22,6 @@ export function parseArgs(args: string[]): CliOptions {
     initConfig: false,
     light: false,
     dark: false,
-    noPager: false,
     lineNumbers: false,
     width: 100,
     depth: 1,
@@ -44,10 +42,6 @@ export function parseArgs(args: string[]): CliOptions {
       options.light = true;
     } else if (arg === "--dark") {
       options.dark = true;
-    } else if (arg === "-p" || arg === "--pager") {
-      // Already default, but accept for compatibility
-    } else if (arg === "-n" || arg === "--no-pager") {
-      options.noPager = true;
     } else if (arg === "-l" || arg === "--line-numbers") {
       options.lineNumbers = true;
     } else if (arg === "-w" || arg === "--width") {
@@ -109,8 +103,7 @@ ${bold("Available Commands:")}
 ${bold("Flags:")}
   -h, --help            help for ${APP_NAME}
   -d, --depth uint      directory browser recursion depth ${dim("(default: 1, includes direct subdirectories)")}
-  -l, --line-numbers    show line numbers ${dim("(pager only)")}
-  -n, --no-pager        display rendered markdown without pager ${dim("(files only, not directories)")}
+  -l, --line-numbers    show line numbers
       --light           force light mode
       --dark            force dark mode
   -v, --version         version for ${APP_NAME}
@@ -157,7 +150,7 @@ _${APP_NAME}_completions() {
     COMPREPLY=()
     cur="\${COMP_WORDS[COMP_CWORD]}"
     prev="\${COMP_WORDS[COMP_CWORD-1]}"
-    opts="-h --help -v --version -l --line-numbers -n --no-pager --light --dark -w --width -d --depth --completion --init-config"
+    opts="-h --help -v --version -l --line-numbers --light --dark -w --width -d --depth --completion --init-config"
 
     case "\${prev}" in
         --completion)
@@ -208,8 +201,6 @@ _${APP_NAME}() {
         '--version[Show version]' \\
         '-l[Show line numbers]' \\
         '--line-numbers[Show line numbers]' \\
-        '-n[Display without pager]' \\
-        '--no-pager[Display without pager]' \\
         '--light[Force light mode]' \\
         '--dark[Force dark mode]' \\
         '-w[Word-wrap at width]:width:' \\
@@ -235,7 +226,6 @@ export function generateFishCompletion(): string {
 complete -c ${APP_NAME} -s h -l help -d 'Show help message'
 complete -c ${APP_NAME} -s v -l version -d 'Show version'
 complete -c ${APP_NAME} -s l -l line-numbers -d 'Show line numbers'
-complete -c ${APP_NAME} -s n -l no-pager -d 'Display without pager'
 complete -c ${APP_NAME} -l light -d 'Force light mode'
 complete -c ${APP_NAME} -l dark -d 'Force dark mode'
 complete -c ${APP_NAME} -s w -l width -d 'Word-wrap at width' -x

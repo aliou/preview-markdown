@@ -22,7 +22,6 @@ import { Pager } from "./pager.js";
 import {
   buildDefaultTextStyle,
   buildMarkdownTheme,
-  type ResolvedTheme,
   resolveTheme,
 } from "./theme.js";
 import { watchFile } from "./watcher.js";
@@ -181,37 +180,6 @@ async function buildContentComponent(
   );
 }
 
-async function renderWithoutPager(
-  content: string,
-  theme: ResolvedTheme,
-  wrapWidth: number,
-): Promise<void> {
-  await initSyntaxHighlighter(theme.textmate);
-
-  const highlightCode = createHighlightCodeFn(theme.name);
-  const markdownTheme = buildMarkdownTheme(theme.colors, highlightCode);
-  const defaultTextStyle = buildDefaultTextStyle(theme.colors);
-
-  const terminalWidth = process.stdout.columns || 80;
-  const width =
-    wrapWidth > 0 ? Math.min(wrapWidth, terminalWidth) : terminalWidth;
-  const mermaidWidth = Math.max(20, width - CONTENT_PADDING_X * 2);
-  const preprocessed = await preprocessMermaid(content, mermaidWidth);
-
-  const markdown = new Markdown(
-    preprocessed,
-    CONTENT_PADDING_X,
-    0,
-    markdownTheme,
-    defaultTextStyle,
-  );
-  const lines = markdown.render(width);
-
-  for (const line of lines) {
-    console.log(line);
-  }
-}
-
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
 
@@ -270,12 +238,6 @@ async function main(): Promise<void> {
     baseDir = process.cwd();
   }
 
-  // --no-pager with a directory input is a hard error
-  if (options.noPager && mode === "browser") {
-    console.error("Error: --no-pager cannot be used with directory input");
-    process.exit(1);
-  }
-
   // Read content for viewer/stdin modes
   let content = "";
   let filename = "";
@@ -306,12 +268,6 @@ async function main(): Promise<void> {
     getThemeName(config, currentColorScheme === "dark"),
     currentColorScheme === "dark",
   );
-
-  // No-pager mode: render and exit (viewer/stdin only — browser blocked above)
-  if (options.noPager) {
-    await renderWithoutPager(content, currentTheme, options.width);
-    process.exit(0);
-  }
 
   // Initialize syntax highlighter
   await initSyntaxHighlighter(currentTheme.textmate);
