@@ -1,5 +1,11 @@
 # preview-markdown
 
+## 0.5.0
+
+### Minor Changes
+
+- f1c689b: Add folder sorting by name, created, and updated dates. Press 's' to cycle sort key (name, created, updated) and 'r' to toggle ascending/descending. Current sort displayed in header.
+
 ## 0.4.1
 
 ### Patch Changes
