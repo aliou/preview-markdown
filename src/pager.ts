@@ -56,6 +56,8 @@ export interface PagerOptions {
   searchBgColor?: (text: string) => string;
   searchFgColor?: (text: string) => string;
   lineNumberColor?: (text: string) => string;
+  matchColor?: (text: string) => string;
+  currentMatchColor?: (text: string) => string;
 }
 
 export class Pager implements Component {
@@ -80,6 +82,8 @@ export class Pager implements Component {
   private searchBgColor: (text: string) => string;
   private searchFgColor: (text: string) => string;
   private lineNumberColor: (text: string) => string;
+  private matchColor: (text: string) => string;
+  private currentMatchColor: (text: string) => string;
 
   // Search state
   private searchMode = false;
@@ -103,6 +107,8 @@ export class Pager implements Component {
     this.searchBgColor = options.searchBgColor ?? ((t) => t);
     this.searchFgColor = options.searchFgColor ?? ((t) => t);
     this.lineNumberColor = options.lineNumberColor ?? ((t) => t);
+    this.matchColor = options.matchColor ?? ((t) => t);
+    this.currentMatchColor = options.currentMatchColor ?? ((t) => t);
   }
 
   setContent(content: Component): void {
@@ -126,6 +132,8 @@ export class Pager implements Component {
     searchBgColor?: (text: string) => string;
     searchFgColor?: (text: string) => string;
     lineNumberColor?: (text: string) => string;
+    matchColor?: (text: string) => string;
+    currentMatchColor?: (text: string) => string;
   }): void {
     if (colors.bgColor) this.bgColor = colors.bgColor;
     if (colors.fgColor) this.fgColor = colors.fgColor;
@@ -134,6 +142,9 @@ export class Pager implements Component {
     if (colors.searchBgColor) this.searchBgColor = colors.searchBgColor;
     if (colors.searchFgColor) this.searchFgColor = colors.searchFgColor;
     if (colors.lineNumberColor) this.lineNumberColor = colors.lineNumberColor;
+    if (colors.matchColor) this.matchColor = colors.matchColor;
+    if (colors.currentMatchColor)
+      this.currentMatchColor = colors.currentMatchColor;
   }
 
   invalidate(): void {
@@ -201,7 +212,17 @@ export class Pager implements Component {
     const visible: string[] = [];
     for (let i = 0; i < sliced.length; i++) {
       const lineNum = start + i + 1; // 1-based line numbers
-      const line = sliced[i] ?? "";
+      let line = sliced[i] ?? "";
+
+      // Highlight search matches within this line
+      if (this.searchMatches.length > 0 && this.searchQuery) {
+        const lineIndex = start + i;
+        if (this.searchMatches.includes(lineIndex)) {
+          const isCurrent =
+            this.searchMatches[this.currentMatchIndex] === lineIndex;
+          line = this.highlightSearchTerms(line, isCurrent);
+        }
+      }
 
       const rendered = this.showLineNumbers
         ? `${this.lineNumberColor(lineNum.toString().padStart(4, " "))} ${line}`
@@ -505,6 +526,68 @@ export class Pager implements Component {
     const targetOffset = Math.max(0, matchLine - Math.floor(contentHeight / 2));
     const maxScroll = Math.max(0, this.cachedLines.length - contentHeight);
     this.scrollOffset = Math.min(targetOffset, maxScroll);
+  }
+
+  private highlightSearchTerms(line: string, isCurrent: boolean): string {
+    if (!this.searchQuery) return line;
+    const queryLower = this.searchQuery.toLowerCase();
+    const plain = stripAnsi(line);
+    const plainLower = plain.toLowerCase();
+
+    // Find all match positions in plain text
+    const positions: Array<{ start: number; end: number }> = [];
+    let pos = 0;
+    while (pos < plainLower.length) {
+      const idx = plainLower.indexOf(queryLower, pos);
+      if (idx === -1) break;
+      positions.push({ start: idx, end: idx + queryLower.length });
+      pos = idx + queryLower.length;
+    }
+    if (positions.length === 0) return line;
+
+    const highlightFn = isCurrent ? this.currentMatchColor : this.matchColor;
+
+    let result = "";
+    let plainIdx = 0;
+    let lineIdx = 0;
+    let posPtr = 0;
+
+    while (lineIdx < line.length) {
+      // Pass through ANSI escape sequences unchanged
+      const ansiMatch = /^\x1b\[[0-9;]*m/.exec(line.slice(lineIdx));
+      if (ansiMatch) {
+        result += ansiMatch[0];
+        lineIdx += ansiMatch[0].length;
+        continue;
+      }
+
+      // At the start of a match: collect plain characters for this span,
+      // discarding any ANSI codes that fall inside it (the highlight replaces them).
+      if (posPtr < positions.length && plainIdx === positions[posPtr]?.start) {
+        const matchEnd = positions[posPtr]!.end;
+        let matchStr = "";
+        while (plainIdx < matchEnd && lineIdx < line.length) {
+          const a = /^\x1b\[[0-9;]*m/.exec(line.slice(lineIdx));
+          if (a) {
+            lineIdx += a[0].length;
+            continue;
+          }
+          matchStr += line[lineIdx];
+          lineIdx++;
+          plainIdx++;
+        }
+        result += highlightFn(matchStr);
+        posPtr++;
+        continue;
+      }
+
+      // Regular character
+      result += line[lineIdx];
+      lineIdx++;
+      plainIdx++;
+    }
+
+    return result;
   }
 
   getScrollInfo(): { current: number; total: number; percent: number } {

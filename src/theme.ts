@@ -52,6 +52,9 @@ export interface MarkdownColors {
   // Help overlay colors
   helpBg: string;
   helpFg: string;
+  // Search match highlighting colors
+  searchMatch: string;
+  searchCurrentMatch: string;
 }
 
 /**
@@ -205,6 +208,10 @@ export function deriveMarkdownColors(theme: TextMateTheme): MarkdownColors {
     ? lighten(background, 0.06)
     : darken(background, 0.04);
 
+  // Search match highlighting colors
+  const searchMatch = isDark ? "#b8860b" : "#c8a000";
+  const searchCurrentMatch = isDark ? "#d2691e" : "#cc5500";
+
   return {
     background,
     foreground,
@@ -223,6 +230,8 @@ export function deriveMarkdownColors(theme: TextMateTheme): MarkdownColors {
     statusBarFg: foreground,
     helpBg,
     helpFg: comment,
+    searchMatch,
+    searchCurrentMatch,
   };
 }
 

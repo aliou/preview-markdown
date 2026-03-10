@@ -322,6 +322,12 @@ async function main(): Promise<void> {
     searchBgColor: chalk.bgHex(currentTheme.colors.statusBarBg),
     searchFgColor: chalk.hex(currentTheme.colors.statusBarFg),
     lineNumberColor: chalk.hex(currentTheme.colors.lineNumber),
+    matchColor: chalk.bold
+      .bgHex(currentTheme.colors.searchMatch)
+      .hex("#0a0a0a"),
+    currentMatchColor: chalk.bold
+      .bgHex(currentTheme.colors.searchCurrentMatch)
+      .hex("#0a0a0a"),
   });
 
   const buildStatusBarColors = () => ({
