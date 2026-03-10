@@ -1,5 +1,12 @@
 # preview-markdown
 
+## 0.5.0
+
+### Minor Changes
+
+- f1c689b: Add folder sorting by name, created, and updated dates. Press 's' to cycle sort key (name, created, updated) and 'r' to toggle ascending/descending. Current sort displayed in header.
+- 7d2e3ef: Highlight search matches inline in the pager. All matching lines show the matched text with an amber background; the currently-focused match uses a brighter orange background to distinguish it.
+
 ## 0.4.1
 
 ### Patch Changes
