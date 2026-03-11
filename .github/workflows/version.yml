@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       force_release:
-        description: 'Force create release for current version'
+        description: "Force create release for current version"
         type: boolean
         default: false
 
@@ -22,6 +22,8 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    outputs:
+      has_changesets: ${{ steps.check.outputs.hasChangesets }}
 
     steps:
       - name: Checkout
@@ -29,22 +31,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          bun-version: latest
-
-      - name: Install Nix
-        uses: cachix/install-nix-action@v30
+          node-version: "25"
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: npm ci
 
       - name: Check for changesets
         id: check
         run: |
           if ls .changeset/*.md 1>/dev/null 2>&1; then
-            # Check if any non-README changeset files exist
             count=$(ls .changeset/*.md 2>/dev/null | grep -v README.md | wc -l)
             if [ "$count" -gt "0" ]; then
               echo "hasChangesets=true" >> $GITHUB_OUTPUT
@@ -55,11 +53,11 @@ jobs:
             echo "hasChangesets=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Version and build
+      - name: Version
         if: steps.check.outputs.hasChangesets == 'true'
         id: version
         run: |
-          bun run version
+          npx changeset version
           VERSION=$(jq -r '.version' package.json)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
@@ -71,45 +69,108 @@ jobs:
           title: "release: v${{ steps.version.outputs.version }}"
           body: |
             This PR was auto-generated to release v${{ steps.version.outputs.version }}.
-            
+
             Merging will create a git tag and GitHub release.
           branch: release/v${{ steps.version.outputs.version }}
           delete-branch: true
 
+  build-binaries:
+    name: Build ${{ matrix.asset }}
+    needs: version
+    if: needs.version.outputs.has_changesets == 'false' || github.event.inputs.force_release == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04-arm
+            asset: pmd-linux-arm64
+          - runner: macos-latest
+            asset: pmd-darwin-arm64
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "25"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build SEA binary
+        run: npm run build
+
+      - name: Verify binary
+        run: |
+          if [ ! -f dist/${{ matrix.asset }} ]; then
+            echo "ERROR: expected dist/${{ matrix.asset }}"
+            ls -la dist/
+            exit 1
+          fi
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+
+  release:
+    name: Release
+    needs: [version, build-binaries]
+    if: needs.version.outputs.has_changesets == 'false' || github.event.inputs.force_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+
+      - name: Download linux binary
+        uses: actions/download-artifact@v4
+        with:
+          name: pmd-linux-arm64
+          path: dist
+
+      - name: Download darwin binary
+        uses: actions/download-artifact@v4
+        with:
+          name: pmd-darwin-arm64
+          path: dist
+
       - name: Release
-        if: steps.check.outputs.hasChangesets == 'false' || inputs.force_release
         run: |
           VERSION=$(jq -r '.version' package.json)
           TAG="v${VERSION}"
-          
-          # Skip if tag already exists (unless force_release)
+
           if git ls-remote --tags origin | grep -q "refs/tags/${TAG}$"; then
-            if [ "${{ inputs.force_release }}" != "true" ]; then
+            if [ "${{ github.event.inputs.force_release }}" != "true" ]; then
               echo "Tag ${TAG} already exists, skipping"
               exit 0
             fi
           fi
-          
+
           echo "Releasing ${TAG}..."
-          
-          # Configure git
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # Build binaries
-          bun run build
-          
-          # Compute hashes
+
           DARWIN_HASH=$(nix hash file --sri dist/pmd-darwin-arm64)
           LINUX_HASH=$(nix hash file --sri dist/pmd-linux-arm64)
           echo "Darwin hash: $DARWIN_HASH"
           echo "Linux hash: $LINUX_HASH"
-          
-          # Update flake.nix with correct hashes
+
           sed -i "s|hash = \"sha256-.*\"; # darwin|hash = \"${DARWIN_HASH}\"; # darwin|" flake.nix
           sed -i "s|hash = \"sha256-.*\"; # linux|hash = \"${LINUX_HASH}\"; # linux|" flake.nix
-          
-          # Commit hash update if changed
+
           git add flake.nix
           if ! git diff --cached --quiet; then
             git commit -m "chore: update binary hashes for ${TAG}"
@@ -117,11 +178,10 @@ jobs:
           else
             echo "No hash changes needed"
           fi
-          
-          # Create tag and release
+
           git tag -a "${TAG}" -m "Release ${TAG}"
           git push origin "${TAG}"
-          
+
           gh release create "${TAG}" \
             --title "${TAG}" \
             --generate-notes \
