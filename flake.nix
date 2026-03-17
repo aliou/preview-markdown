@@ -35,11 +35,11 @@
 
         src = ./.;
 
-        nativeBuildInputs = [ pkgs.bun pkgs.makeWrapper ];
+        nativeBuildInputs = [ pkgs.nodejs pkgs.makeWrapper ];
 
         buildPhase = ''
           export HOME=$(mktemp -d)
-          bun install --frozen-lockfile
+          npm ci
         '';
 
         installPhase = ''
@@ -51,7 +51,7 @@
           mkdir -p $out/bin
           cat > $out/bin/pmd << 'EOF'
           #!/usr/bin/env bash
-          exec ${pkgs.bun}/bin/bun run "$out/lib/pmd/src/index.ts" "$@"
+          exec "$out/lib/pmd/node_modules/.bin/tsx" "$out/lib/pmd/src/index.ts" "$@"
           EOF
           chmod +x $out/bin/pmd
 
@@ -109,14 +109,14 @@
             biome-format = {
               enable = true;
               name = "biome format";
-              entry = "${pkgs.bun}/bin/bun run format";
+              entry = "${pkgs.nodejs}/bin/npm run format";
               files = "\\.(ts|json)$";
               pass_filenames = false;
             };
             typecheck = {
               enable = true;
               name = "typecheck";
-              entry = "${pkgs.bun}/bin/bun run typecheck";
+              entry = "${pkgs.nodejs}/bin/npm run typecheck";
               files = "\\.ts$";
               pass_filenames = false;
             };
@@ -141,7 +141,7 @@
 
         devShells.default = pkgs.mkShell {
           inherit (pre-commit-check) shellHook;
-          buildInputs = [ pkgs.bun ];
+          buildInputs = [ pkgs.nodejs_24 ];
         };
       }
     ) // {
