@@ -8,7 +8,7 @@
 
   outputs = { self, nixpkgs, flake-utils }:
     let
-      version = "0.5.0";
+      version = "0.6.0";
 
       # Binary hashes for releases - update these after each release
       # Run: nix-prefetch-url --type sha256 <url>
@@ -16,11 +16,11 @@
       binaries = {
         "aarch64-darwin" = {
           url = "https://github.com/aliou/preview-markdown/releases/download/v${version}/pmd-darwin-arm64";
-          hash = "sha256-5/s+/sXRW2bNxsZvhl7tS470oINovoBKK/lfBEloaxs="; # darwin
+          hash = "sha256-IqSkVAmlaZBVTksgGjMgsQerQo53R3a6kNo0tmiF69s="; # darwin
         };
         "aarch64-linux" = {
           url = "https://github.com/aliou/preview-markdown/releases/download/v${version}/pmd-linux-arm64";
-          hash = "sha256-Uv36fdEDoIgkwU9Jn/spioNZuHyzQev8ZLx3xK4W1hk="; # linux
+          hash = "sha256-TBCWlqEgjGGlknCe7nQae0AXUEC1TLadXXtTiGz4dtE="; # linux
         };
       };
 
