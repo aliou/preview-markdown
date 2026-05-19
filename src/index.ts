@@ -8,7 +8,7 @@ import {
   Spacer,
   TUI,
   visibleWidth,
-} from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-tui";
 import chalk from "chalk";
 import { Browser, type Entry, scanDirectory } from "./browser.js";
 import { parseArgs, printCompletion, printHelp, printVersion } from "./cli.js";
@@ -463,8 +463,8 @@ async function main(): Promise<void> {
           } catch {
             // Ignore read errors after edit
           }
-          enterAlternateScreen();
           tui.start();
+          tui.requestRender(true);
         })();
       },
       onSuspend: () => {

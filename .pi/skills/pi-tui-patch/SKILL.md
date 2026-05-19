@@ -1,22 +1,22 @@
 ---
 name: pi-tui-patch
-description: Regenerate the pi-tui patch for boxed code blocks when updating the @mariozechner/pi-tui dependency. Use when upgrading pi-tui or when the patch fails to apply.
+description: Regenerate the pi-tui patch for boxed code blocks when updating the @earendil-works/pi-tui dependency. Use when upgrading pi-tui or when the patch fails to apply.
 ---
 
 # pi-tui Patch Regeneration
 
-This project patches `@mariozechner/pi-tui` to render code blocks with box borders instead of backtick markers.
+This project patches `@earendil-works/pi-tui` to render code blocks with box borders instead of backtick markers.
 
 ## When to Use
 
-- Updating `@mariozechner/pi-tui` to a new version
+- Updating `@earendil-works/pi-tui` to a new version
 - Patch fails to apply after `bun install`
 - Modifying the boxed code block feature
 
 ## Current Patch Location
 
 ```
-patches/@mariozechner%2Fpi-tui@<version>.patch
+patches/@earendil-works%2Fpi-tui@<version>.patch
 ```
 
 ## What the Patch Does
@@ -31,15 +31,14 @@ Modifies `dist/components/markdown.js` to:
    ╰───────────────────────╯
    ```
 3. Replace backtick-style rendering in `renderToken()` case "code"
-4. Replace backtick-style rendering in `renderListItem()` for code blocks in lists
 
 ## Regeneration Steps
 
 ### 1. Update the dependency
 
 ```bash
-bun remove @mariozechner/pi-tui
-bun add @mariozechner/pi-tui@<new-version>
+bun remove @earendil-works/pi-tui
+bun add @earendil-works/pi-tui@<new-version>
 ```
 
 ### 2. Update package.json patchedDependencies
@@ -48,21 +47,21 @@ Change the version in `patchedDependencies`:
 
 ```json
 "patchedDependencies": {
-  "@mariozechner/pi-tui@<new-version>": "patches/@mariozechner%2Fpi-tui@<new-version>.patch"
+  "@earendil-works/pi-tui@<new-version>": "patches/@earendil-works%2Fpi-tui@<new-version>.patch"
 }
 ```
 
 ### 3. Delete the old patch file
 
 ```bash
-rm patches/@mariozechner%2Fpi-tui@<old-version>.patch
+rm patches/@earendil-works%2Fpi-tui@<old-version>.patch
 ```
 
 ### 4. Apply modifications to node_modules
 
-Edit `node_modules/@mariozechner/pi-tui/dist/components/markdown.js`:
+Edit `node_modules/@earendil-works/pi-tui/dist/components/markdown.js`:
 
-**Add after the imports:**
+**Add after `markdownParser.setOptions(...)`:**
 
 ```javascript
 // Box drawing characters for code blocks
@@ -76,7 +75,7 @@ const BOX_CHARS = {
 };
 ```
 
-**Add the `renderCodeBlock` method after `getDefaultStylePrefix()`:**
+**Add the `renderCodeBlock` method after `getDefaultInlineStyleContext()`:**
 
 ```javascript
 /**
@@ -152,21 +151,10 @@ case "code": {
     lines.push(...codeBlockLines);
 ```
 
-**Replace code block handling in `renderListItem()`:**
-
-Find the `else if (token.type === "code")` block and replace with:
-```javascript
-else if (token.type === "code") {
-    // Code block in list item - use boxed rendering
-    const codeBlockLines = this.renderCodeBlock(token.text, token.lang, 80);
-    lines.push(...codeBlockLines);
-}
-```
-
 ### 5. Generate the new patch
 
 ```bash
-bun patch --commit @mariozechner/pi-tui
+bun patch --commit @earendil-works/pi-tui
 ```
 
 ### 6. Verify
@@ -181,5 +169,5 @@ bun run src/index.ts README.md
 The full patched `markdown.js` can be found by applying the current patch and examining the result:
 
 ```bash
-cat node_modules/@mariozechner/pi-tui/dist/components/markdown.js
+cat node_modules/@earendil-works/pi-tui/dist/components/markdown.js
 ```

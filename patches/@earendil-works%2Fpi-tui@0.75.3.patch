@@ -1,0 +1,95 @@
+diff --git a/dist/components/markdown.js b/dist/components/markdown.js
+index 1f73455cddb2159279193624b6f703b9da275680..e4bad8783e783eb3bc3a7da18c543aecca8cc92f 100644
+--- a/dist/components/markdown.js
++++ b/dist/components/markdown.js
+@@ -21,6 +21,15 @@ const markdownParser = new Marked();
+ markdownParser.setOptions({
+     tokenizer: new StrictStrikethroughTokenizer(),
+ });
++// Box drawing characters for code blocks
++const BOX_CHARS = {
++    topLeft: "╭",
++    topRight: "╮",
++    bottomLeft: "╰",
++    bottomRight: "╯",
++    horizontal: "─",
++    vertical: "│",
++};
+ export class Markdown {
+     text;
+     paddingX; // Left/right padding
+@@ -196,6 +205,49 @@ export class Markdown {
+             stylePrefix: this.getDefaultStylePrefix(),
+         };
+     }
++    /**
++     * Render a code block with a box border and language label.
++     */
++    renderCodeBlock(code, lang, availableWidth) {
++        const lines = [];
++        const borderStyle = this.theme.codeBlockBorder;
++        let codeLines;
++        if (this.theme.highlightCode) {
++            codeLines = this.theme.highlightCode(code, lang);
++        }
++        else {
++            codeLines = code.split("\n").map((line) => this.theme.codeBlock(line));
++        }
++        let maxLineWidth = 0;
++        for (const line of codeLines) {
++            const lineWidth = visibleWidth(line);
++            if (lineWidth > maxLineWidth) {
++                maxLineWidth = lineWidth;
++            }
++        }
++        const langLabel = lang || "";
++        const minWidthForLabel = langLabel.length + 4;
++        const innerWidth = Math.max(maxLineWidth + 2, minWidthForLabel);
++        let topBorder;
++        if (langLabel) {
++            const labelPart = `${BOX_CHARS.horizontal} ${langLabel} `;
++            const remainingWidth = innerWidth - labelPart.length;
++            topBorder = BOX_CHARS.topLeft + labelPart + BOX_CHARS.horizontal.repeat(Math.max(0, remainingWidth)) + BOX_CHARS.topRight;
++        }
++        else {
++            topBorder = BOX_CHARS.topLeft + BOX_CHARS.horizontal.repeat(innerWidth) + BOX_CHARS.topRight;
++        }
++        lines.push(borderStyle(topBorder));
++        for (const codeLine of codeLines) {
++            const lineWidth = visibleWidth(codeLine);
++            const padding = " ".repeat(Math.max(0, innerWidth - lineWidth - 1));
++            const line = borderStyle(BOX_CHARS.vertical) + " " + codeLine + padding + borderStyle(BOX_CHARS.vertical);
++            lines.push(line);
++        }
++        const bottomBorder = BOX_CHARS.bottomLeft + BOX_CHARS.horizontal.repeat(innerWidth) + BOX_CHARS.bottomRight;
++        lines.push(borderStyle(bottomBorder));
++        return lines;
++    }
+     renderToken(token, width, nextTokenType, styleContext) {
+         const lines = [];
+         switch (token.type) {
+@@ -237,22 +289,8 @@ export class Markdown {
+                 lines.push(this.renderInlineTokens([token], styleContext));
+                 break;
+             case "code": {
+-                const indent = this.theme.codeBlockIndent ?? "  ";
+-                lines.push(this.theme.codeBlockBorder(`\`\`\`${token.lang || ""}`));
+-                if (this.theme.highlightCode) {
+-                    const highlightedLines = this.theme.highlightCode(token.text, token.lang);
+-                    for (const hlLine of highlightedLines) {
+-                        lines.push(`${indent}${hlLine}`);
+-                    }
+-                }
+-                else {
+-                    // Split code by newlines and style each line
+-                    const codeLines = token.text.split("\n");
+-                    for (const codeLine of codeLines) {
+-                        lines.push(`${indent}${this.theme.codeBlock(codeLine)}`);
+-                    }
+-                }
+-                lines.push(this.theme.codeBlockBorder("```"));
++                const codeBlockLines = this.renderCodeBlock(token.text, token.lang, width);
++                lines.push(...codeBlockLines);
+                 if (nextTokenType && nextTokenType !== "space") {
+                     lines.push(""); // Add spacing after code blocks (unless space token follows)
+                 }

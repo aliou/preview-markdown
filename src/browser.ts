@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { Component } from "@mariozechner/pi-tui";
-import { Key, matchesKey } from "@mariozechner/pi-tui";
+import type { Component } from "@earendil-works/pi-tui";
+import { Key, matchesKey } from "@earendil-works/pi-tui";
 
 const MD_EXTENSIONS = new Set([".md", ".markdown", ".mdx"]);
 

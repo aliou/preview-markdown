@@ -1,5 +1,5 @@
-import type { Component } from "@mariozechner/pi-tui";
-import { Key, matchesKey, visibleWidth } from "@mariozechner/pi-tui";
+import type { Component } from "@earendil-works/pi-tui";
+import { Key, matchesKey, visibleWidth } from "@earendil-works/pi-tui";
 
 // Strip ANSI escape codes for text searching
 const ANSI_REGEX = /\x1b\[[0-9;]*m/g;
@@ -563,8 +563,9 @@ export class Pager implements Component {
 
       // At the start of a match: collect plain characters for this span,
       // discarding any ANSI codes that fall inside it (the highlight replaces them).
-      if (posPtr < positions.length && plainIdx === positions[posPtr]?.start) {
-        const matchEnd = positions[posPtr]!.end;
+      const matchPosition = positions[posPtr];
+      if (matchPosition && plainIdx === matchPosition.start) {
+        const matchEnd = matchPosition.end;
         let matchStr = "";
         while (plainIdx < matchEnd && lineIdx < line.length) {
           const a = /^\x1b\[[0-9;]*m/.exec(line.slice(lineIdx));

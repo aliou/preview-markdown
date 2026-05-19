@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { DefaultTextStyle, MarkdownTheme } from "@mariozechner/pi-tui";
+import type { DefaultTextStyle, MarkdownTheme } from "@earendil-works/pi-tui";
 import chalk from "chalk";
 import { APP_NAME } from "./constants.js";
 

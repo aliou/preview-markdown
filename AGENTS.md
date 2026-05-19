@@ -13,7 +13,7 @@ The app has two main modes, managed by a `Switcher` component that delegates ren
 - **Browser** (`src/browser.ts`): TUI file picker that scans a directory for `.md`/`.markdown`/`.mdx` files. Supports filtering, sorting, and recursive depth.
 - **Pager** (`src/pager.ts`): Scrollable viewer for a single markdown file. Handles search, line numbers, file watching, and opening `$EDITOR`.
 
-Both are built on top of `@mariozechner/pi-tui`, which provides the TUI framework and markdown rendering component. The project patches `pi-tui` to render code blocks with box-drawing borders instead of backtick markers (see `patches/` and the `pi-tui-patch` skill).
+Both are built on top of `@earendil-works/pi-tui`, which provides the TUI framework and markdown rendering component. The project patches `pi-tui` to render code blocks with box-drawing borders instead of backtick markers (see `patches/` and the `pi-tui-patch` skill).
 
 ### Key modules
 
@@ -40,7 +40,7 @@ Both are built on top of `@mariozechner/pi-tui`, which provides the TUI framewor
 
 ### Dependencies
 
-- `@mariozechner/pi-tui` -- TUI framework and markdown rendering (patched)
+- `@earendil-works/pi-tui` -- TUI framework and markdown rendering (patched)
 - `shiki` -- syntax highlighting engine
 - `chalk` -- terminal colors
 - `beautiful-mermaid` -- Mermaid-to-ASCII rendering
@@ -63,4 +63,4 @@ bun run build
 
 - The project uses Biome for linting and formatting.
 - Versioning uses changesets. See the `release` skill for the full release workflow.
-- When upgrading `@mariozechner/pi-tui`, follow the `pi-tui-patch` skill to regenerate the patch.
+- When upgrading `@earendil-works/pi-tui`, follow the `pi-tui-patch` skill to regenerate the patch.
