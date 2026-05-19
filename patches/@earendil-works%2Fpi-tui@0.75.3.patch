@@ -2,7 +2,7 @@ diff --git a/dist/components/markdown.js b/dist/components/markdown.js
 index 1f73455cddb2159279193624b6f703b9da275680..e4bad8783e783eb3bc3a7da18c543aecca8cc92f 100644
 --- a/dist/components/markdown.js
 +++ b/dist/components/markdown.js
-@@ -21,6 +21,15 @@ const markdownParser = new Marked();
+@@ -21,6 +21,15 @@
  markdownParser.setOptions({
      tokenizer: new StrictStrikethroughTokenizer(),
  });
@@ -18,7 +18,7 @@ index 1f73455cddb2159279193624b6f703b9da275680..e4bad8783e783eb3bc3a7da18c543aec
  export class Markdown {
      text;
      paddingX; // Left/right padding
-@@ -196,6 +205,49 @@ export class Markdown {
+@@ -196,6 +205,59 @@
              stylePrefix: this.getDefaultStylePrefix(),
          };
      }
@@ -42,24 +42,34 @@ index 1f73455cddb2159279193624b6f703b9da275680..e4bad8783e783eb3bc3a7da18c543aec
 +                maxLineWidth = lineWidth;
 +            }
 +        }
-+        const langLabel = lang || "";
-+        const minWidthForLabel = langLabel.length + 4;
-+        const innerWidth = Math.max(maxLineWidth + 2, minWidthForLabel);
++        const maxInnerWidth = Math.max(2, availableWidth - 2);
++        const maxLabelWidth = Math.max(0, maxInnerWidth - 4);
++        const rawLangLabel = lang || "";
++        const langLabel = rawLangLabel.length > maxLabelWidth ? rawLangLabel.slice(0, maxLabelWidth) : rawLangLabel;
++        const minWidthForLabel = langLabel ? visibleWidth(langLabel) + 4 : 2;
++        const innerWidth = Math.min(maxInnerWidth, Math.max(maxLineWidth + 2, minWidthForLabel, 2));
++        const codeContentWidth = Math.max(1, innerWidth - 2);
 +        let topBorder;
 +        if (langLabel) {
 +            const labelPart = `${BOX_CHARS.horizontal} ${langLabel} `;
-+            const remainingWidth = innerWidth - labelPart.length;
++            const remainingWidth = innerWidth - visibleWidth(labelPart);
 +            topBorder = BOX_CHARS.topLeft + labelPart + BOX_CHARS.horizontal.repeat(Math.max(0, remainingWidth)) + BOX_CHARS.topRight;
 +        }
 +        else {
 +            topBorder = BOX_CHARS.topLeft + BOX_CHARS.horizontal.repeat(innerWidth) + BOX_CHARS.topRight;
 +        }
 +        lines.push(borderStyle(topBorder));
++        const continuationIndent = "  ";
++        const wrappedCodeWidth = Math.max(1, codeContentWidth - visibleWidth(continuationIndent));
 +        for (const codeLine of codeLines) {
-+            const lineWidth = visibleWidth(codeLine);
-+            const padding = " ".repeat(Math.max(0, innerWidth - lineWidth - 1));
-+            const line = borderStyle(BOX_CHARS.vertical) + " " + codeLine + padding + borderStyle(BOX_CHARS.vertical);
-+            lines.push(line);
++            const wrappedCodeLines = wrapTextWithAnsi(codeLine, wrappedCodeWidth);
++            for (let i = 0; i < wrappedCodeLines.length; i++) {
++                const wrappedCodeLine = i === 0 ? wrappedCodeLines[i] : continuationIndent + wrappedCodeLines[i];
++                const lineWidth = visibleWidth(wrappedCodeLine);
++                const padding = " ".repeat(Math.max(0, codeContentWidth - lineWidth));
++                const line = borderStyle(BOX_CHARS.vertical) + " " + wrappedCodeLine + padding + " " + borderStyle(BOX_CHARS.vertical);
++                lines.push(line);
++            }
 +        }
 +        const bottomBorder = BOX_CHARS.bottomLeft + BOX_CHARS.horizontal.repeat(innerWidth) + BOX_CHARS.bottomRight;
 +        lines.push(borderStyle(bottomBorder));
@@ -68,7 +78,7 @@ index 1f73455cddb2159279193624b6f703b9da275680..e4bad8783e783eb3bc3a7da18c543aec
      renderToken(token, width, nextTokenType, styleContext) {
          const lines = [];
          switch (token.type) {
-@@ -237,22 +289,8 @@ export class Markdown {
+@@ -237,22 +299,8 @@
                  lines.push(this.renderInlineTokens([token], styleContext));
                  break;
              case "code": {

@@ -53,6 +53,7 @@ const COMMON_LANGS: BundledLanguage[] = [
   "html",
   "css",
   "markdown",
+  "nix",
   "sql",
   "ruby",
   "php",
