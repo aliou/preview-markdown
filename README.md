@@ -19,6 +19,13 @@ This project is an experiment in building a complete tool using AI coding agents
 
 ## Installation
 
+### Homebrew
+
+```bash
+brew tap aliou/toolbox
+brew install aliou/toolbox/pmd
+```
+
 ### Manual
 
 Download the binary for your platform from the [releases page](https://github.com/aliou/preview-markdown/releases):
