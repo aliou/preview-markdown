@@ -55,6 +55,9 @@ bun run src/index.ts README.md
 bun run lint
 bun run typecheck
 
+# Install git hooks (also done by nix develop)
+lefthook install -f
+
 # Build binaries
 bun run build
 ```
@@ -62,5 +65,6 @@ bun run build
 ## Conventions
 
 - The project uses Biome for linting and formatting.
+- Git hooks are managed by Lefthook (`lefthook.yml`). The dev shell installs the hook automatically.
 - Versioning uses changesets. See the `release` skill for the full release workflow.
 - When upgrading `@earendil-works/pi-tui`, follow the `pi-tui-patch` skill to regenerate the patch.

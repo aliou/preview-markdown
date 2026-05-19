@@ -4,13 +4,9 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    git-hooks = {
-      url = "github:cachix/git-hooks.nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, git-hooks }:
+  outputs = { self, nixpkgs, flake-utils }:
     let
       version = "0.5.0";
 
@@ -103,30 +99,14 @@
         pkgs = nixpkgs.legacyPackages.${system};
         pmd = buildFromSource pkgs;
 
-        pre-commit-check = git-hooks.lib.${system}.run {
-          src = ./.;
-          hooks = {
-            biome-format = {
-              enable = true;
-              name = "biome format";
-              entry = "${pkgs.bun}/bin/bun run format";
-              files = "\\.(ts|json)$";
-              pass_filenames = false;
-            };
-            typecheck = {
-              enable = true;
-              name = "typecheck";
-              entry = "${pkgs.bun}/bin/bun run typecheck";
-              files = "\\.ts$";
-              pass_filenames = false;
-            };
-          };
-        };
+        installLefthook = ''
+          if [ -d .git ] && command -v lefthook >/dev/null 2>&1; then
+            lefthook install -f >/dev/null
+          fi
+        '';
       in
       {
-        checks = {
-          pre-commit-check = pre-commit-check;
-        };
+        checks = { };
 
         packages = {
           default = pmd;
@@ -140,8 +120,8 @@
         };
 
         devShells.default = pkgs.mkShell {
-          inherit (pre-commit-check) shellHook;
-          buildInputs = [ pkgs.bun ];
+          shellHook = installLefthook;
+          buildInputs = [ pkgs.bun pkgs.lefthook ];
         };
       }
     ) // {
