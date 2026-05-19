@@ -3,10 +3,13 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import {
   type Component,
+  KeybindingsManager,
   Markdown,
   ProcessTerminal,
   Spacer,
+  setKeybindings,
   TUI,
+  TUI_KEYBINDINGS,
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import chalk from "chalk";
@@ -16,6 +19,7 @@ import { type ColorScheme, detectColorScheme } from "./color-scheme.js";
 import { getThemeName, loadConfig, saveDefaultConfig } from "./config.js";
 import { openInEditor } from "./editor.js";
 import { createHighlightCodeFn, initSyntaxHighlighter } from "./highlighter.js";
+import { PMD_KEYBINDINGS } from "./keybindings.js";
 import { preprocessMdx } from "./mdx.js";
 import { preprocessMermaid } from "./mermaid.js";
 import { Pager } from "./pager.js";
@@ -33,9 +37,18 @@ const EXIT_ALT_SCREEN = "\x1b[?1049l";
 // Mode 2031: color scheme change notifications
 const ENABLE_COLOR_SCHEME_REPORTING = "\x1b[?2031h";
 const DISABLE_COLOR_SCHEME_REPORTING = "\x1b[?2031l";
+const COLOR_SCHEME_DARK = "\x1b[?997;1n";
+const COLOR_SCHEME_LIGHT = "\x1b[?997;2n";
 
 // Markdown content padding for a balanced reading layout
 const CONTENT_PADDING_X = 2;
+
+setKeybindings(
+  new KeybindingsManager({
+    ...TUI_KEYBINDINGS,
+    ...PMD_KEYBINDINGS,
+  }),
+);
 
 function enterAlternateScreen(): void {
   process.stdout.write(ENTER_ALT_SCREEN);
@@ -348,7 +361,6 @@ async function main(): Promise<void> {
   let browser: Browser | null = null;
 
   // --- Color scheme change handler ---
-  // Called by both Browser and Pager when they detect a terminal color change.
   const handleColorSchemeChange = async (newScheme: ColorScheme) => {
     if (newScheme === currentColorScheme) return;
 
@@ -393,6 +405,17 @@ async function main(): Promise<void> {
 
     tui.requestRender(true);
   };
+
+  tui.addInputListener((data) => {
+    if (data.includes(COLOR_SCHEME_DARK)) {
+      void handleColorSchemeChange("dark");
+      return { consume: true };
+    }
+    if (data.includes(COLOR_SCHEME_LIGHT)) {
+      void handleColorSchemeChange("light");
+      return { consume: true };
+    }
+  });
 
   // --- Pager creation helper ---
   // fromBrowser: true  -> q goes back to browser
@@ -472,7 +495,6 @@ async function main(): Promise<void> {
         tui.stop();
         process.kill(process.pid, "SIGTSTP");
       },
-      onColorSchemeChange: handleColorSchemeChange,
       showLineNumbers,
       wrapWidth: options.width,
       ...buildPagerColors(),
@@ -545,7 +567,6 @@ async function main(): Promise<void> {
         exitAlternateScreen();
         process.exit(0);
       },
-      onColorSchemeChange: handleColorSchemeChange,
       ...buildBrowserColors(),
     });
 

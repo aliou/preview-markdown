@@ -1,22 +1,11 @@
 import type { Component } from "@earendil-works/pi-tui";
-import { Key, matchesKey, visibleWidth } from "@earendil-works/pi-tui";
+import { visibleWidth } from "@earendil-works/pi-tui";
+import { pmdMatches } from "./keybindings.js";
 
 // Strip ANSI escape codes for text searching
 const ANSI_REGEX = /\x1b\[[0-9;]*m/g;
 function stripAnsi(text: string): string {
   return text.replace(ANSI_REGEX, "");
-}
-
-// Page Up/Down escape sequences
-const PAGE_UP_SEQUENCES = ["\x1b[5~", "\x1b[5;1~"];
-const PAGE_DOWN_SEQUENCES = ["\x1b[6~", "\x1b[6;1~"];
-
-function isPageUp(data: string): boolean {
-  return PAGE_UP_SEQUENCES.includes(data);
-}
-
-function isPageDown(data: string): boolean {
-  return PAGE_DOWN_SEQUENCES.includes(data);
 }
 
 // Help text displayed as a two-column layout at bottom of viewport
@@ -34,19 +23,12 @@ const HELP_LINES = [
 // Line number column width (4 digits + 1 space)
 const LINE_NUMBER_WIDTH = 5;
 
-// Color scheme change detection (mode 2031)
-const COLOR_SCHEME_DARK = "\x1b[?997;1n";
-const COLOR_SCHEME_LIGHT = "\x1b[?997;2n";
-
-export type ColorScheme = "light" | "dark";
-
 export interface PagerOptions {
   content: Component;
   onExit: () => void;
   onEdit?: (lineNumber: number) => void;
   onReload?: () => void;
   onSuspend?: () => void;
-  onColorSchemeChange?: (scheme: ColorScheme) => void;
   showLineNumbers?: boolean;
   wrapWidth?: number;
   bgColor?: (text: string) => string;
@@ -66,7 +48,6 @@ export class Pager implements Component {
   private onEdit?: (lineNumber: number) => void;
   private onReload?: () => void;
   private onSuspend?: () => void;
-  private onColorSchemeChange?: (scheme: ColorScheme) => void;
   private fileChanged = false;
   private showLineNumbers: boolean;
   private wrapWidth: number;
@@ -97,7 +78,6 @@ export class Pager implements Component {
     this.onEdit = options.onEdit;
     this.onReload = options.onReload;
     this.onSuspend = options.onSuspend;
-    this.onColorSchemeChange = options.onColorSchemeChange;
     this.showLineNumbers = options.showLineNumbers ?? false;
     this.wrapWidth = options.wrapWidth ?? 0;
     this.bgColor = options.bgColor ?? ((t) => t);
@@ -292,28 +272,14 @@ export class Pager implements Component {
   }
 
   handleInput(data: string): void {
-    // Check for color scheme change notifications (mode 2031)
-    if (data === COLOR_SCHEME_DARK || data.includes(COLOR_SCHEME_DARK)) {
-      if (this.onColorSchemeChange) {
-        this.onColorSchemeChange("dark");
-      }
-      return;
-    }
-    if (data === COLOR_SCHEME_LIGHT || data.includes(COLOR_SCHEME_LIGHT)) {
-      if (this.onColorSchemeChange) {
-        this.onColorSchemeChange("light");
-      }
-      return;
-    }
-
     // Handle search mode input separately
     if (this.searchMode) {
       this.handleSearchInput(data);
       return;
     }
 
-    // Handle Ctrl-Z (suspend)
-    if (matchesKey(data, Key.ctrl("z"))) {
+    // Handle suspend
+    if (pmdMatches(data, "pmd.pager.suspend")) {
       if (this.onSuspend) {
         this.onSuspend();
       }
@@ -321,7 +287,7 @@ export class Pager implements Component {
     }
 
     // Toggle help
-    if (data === "?") {
+    if (pmdMatches(data, "pmd.common.toggleHelp")) {
       this.showingHelp = !this.showingHelp;
       return;
     }
@@ -338,26 +304,26 @@ export class Pager implements Component {
     const pageSize = Math.max(1, contentHeight - 2);
 
     // Enter search mode
-    if (data === "/") {
+    if (pmdMatches(data, "pmd.pager.search")) {
       this.searchMode = true;
       this.searchQuery = "";
       return;
     }
 
     // Navigate to next match
-    if (data === "n") {
+    if (pmdMatches(data, "pmd.pager.nextMatch")) {
       this.goToNextMatch();
       return;
     }
 
     // Navigate to previous match
-    if (data === "N") {
+    if (pmdMatches(data, "pmd.pager.prevMatch")) {
       this.goToPrevMatch();
       return;
     }
 
     // Edit in $EDITOR
-    if (data === "e") {
+    if (pmdMatches(data, "pmd.pager.edit")) {
       if (this.onEdit) {
         // Calculate current line number (1-based)
         const lineNumber = this.scrollOffset + 1;
@@ -367,59 +333,54 @@ export class Pager implements Component {
     }
 
     // Reload file
-    if (data === "r" || data === "R") {
+    if (pmdMatches(data, "pmd.pager.reload")) {
       if (this.onReload) {
         this.onReload();
       }
       return;
     }
 
-    if (
-      matchesKey(data, Key.ctrl("c")) ||
-      matchesKey(data, Key.escape) ||
-      data === "q" ||
-      data === "Q"
-    ) {
+    if (pmdMatches(data, "pmd.common.quit")) {
       this.onExit();
       return;
     }
 
-    if (matchesKey(data, Key.up) || data === "k") {
+    if (pmdMatches(data, "pmd.common.up")) {
       this.scrollOffset = Math.max(0, this.scrollOffset - 1);
       return;
     }
 
-    if (matchesKey(data, Key.down) || data === "j") {
+    if (pmdMatches(data, "pmd.common.down")) {
       this.scrollOffset = Math.min(maxScroll, this.scrollOffset + 1);
       return;
     }
 
     // Page Up
-    if (isPageUp(data) || data === "b" || data === "B") {
+    if (pmdMatches(data, "pmd.common.pageUp")) {
       this.scrollOffset = Math.max(0, this.scrollOffset - pageSize);
       return;
     }
 
     // Page Down
-    if (isPageDown(data) || data === " " || data === "f" || data === "F") {
+    if (pmdMatches(data, "pmd.common.pageDown")) {
       this.scrollOffset = Math.min(maxScroll, this.scrollOffset + pageSize);
       return;
     }
 
     // Home / go to top
-    if (matchesKey(data, Key.home) || data === "g") {
+    if (pmdMatches(data, "pmd.common.top")) {
       this.scrollOffset = 0;
       return;
     }
 
     // End / go to bottom
-    if (matchesKey(data, Key.end) || data === "G") {
+    if (pmdMatches(data, "pmd.common.bottom")) {
       this.scrollOffset = maxScroll;
       return;
     }
 
     // Half page up
-    if (data === "u" || data === "U") {
+    if (pmdMatches(data, "pmd.pager.halfPageUp")) {
       this.scrollOffset = Math.max(
         0,
         this.scrollOffset - Math.floor(pageSize / 2),
@@ -428,7 +389,7 @@ export class Pager implements Component {
     }
 
     // Half page down
-    if (data === "d" || data === "D") {
+    if (pmdMatches(data, "pmd.pager.halfPageDown")) {
       this.scrollOffset = Math.min(
         maxScroll,
         this.scrollOffset + Math.floor(pageSize / 2),
@@ -439,7 +400,7 @@ export class Pager implements Component {
 
   private handleSearchInput(data: string): void {
     // Cancel search
-    if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
+    if (pmdMatches(data, "pmd.common.cancel")) {
       this.searchMode = false;
       this.searchQuery = "";
       this.searchMatches = [];
@@ -448,7 +409,7 @@ export class Pager implements Component {
     }
 
     // Confirm search
-    if (matchesKey(data, Key.enter)) {
+    if (pmdMatches(data, "pmd.common.confirm")) {
       this.searchMode = false;
       if (this.searchQuery.length > 0) {
         this.performSearch();
@@ -458,7 +419,7 @@ export class Pager implements Component {
     }
 
     // Backspace
-    if (matchesKey(data, Key.backspace)) {
+    if (pmdMatches(data, "pmd.common.backspace")) {
       this.searchQuery = this.searchQuery.slice(0, -1);
       return;
     }

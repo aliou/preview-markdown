@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Component } from "@earendil-works/pi-tui";
-import { Key, matchesKey } from "@earendil-works/pi-tui";
+import { pmdMatches } from "./keybindings.js";
 
 const MD_EXTENSIONS = new Set([".md", ".markdown", ".mdx"]);
 
@@ -10,23 +10,6 @@ const HEADER_HEIGHT = 2;
 
 // Lines rendered per list item: filename, metadata, blank separator.
 const ITEM_HEIGHT = 3;
-
-const PAGE_UP_SEQUENCES = ["\x1b[5~", "\x1b[5;1~"];
-const PAGE_DOWN_SEQUENCES = ["\x1b[6~", "\x1b[6;1~"];
-
-function isPageUp(data: string): boolean {
-  return PAGE_UP_SEQUENCES.includes(data);
-}
-
-function isPageDown(data: string): boolean {
-  return PAGE_DOWN_SEQUENCES.includes(data);
-}
-
-// Color scheme change detection (mode 2031) - same sequences as pager.ts
-const COLOR_SCHEME_DARK = "\x1b[?997;1n";
-const COLOR_SCHEME_LIGHT = "\x1b[?997;2n";
-
-export type ColorScheme = "light" | "dark";
 
 const MINI_HELP =
   "  enter open  •  j/k move  •  / filter  •  ? help  •  s cycle sort  •  r reverse sort  •  q quit";
@@ -187,7 +170,6 @@ export interface BrowserOptions extends BrowserColors {
   baseDir: string;
   onOpen: (entry: Entry) => void;
   onQuit: () => void;
-  onColorSchemeChange?: (scheme: ColorScheme) => void;
 }
 
 export class Browser implements Component {
@@ -204,7 +186,6 @@ export class Browser implements Component {
   private sortDirection: "asc" | "desc" = "asc";
   private onOpen: (entry: Entry) => void;
   private onQuit: () => void;
-  private onColorSchemeChange?: (scheme: ColorScheme) => void;
   private bgColor: (text: string) => string;
   private fgColor: (text: string) => string;
   private accentColor: (text: string) => string;
@@ -220,7 +201,6 @@ export class Browser implements Component {
     this.filtered = [...options.entries];
     this.onOpen = options.onOpen;
     this.onQuit = options.onQuit;
-    this.onColorSchemeChange = options.onColorSchemeChange;
     this.bgColor = options.bgColor ?? ((t) => t);
     this.fgColor = options.fgColor ?? ((t) => t);
     this.accentColor = options.accentColor ?? ((t) => t);
@@ -496,23 +476,13 @@ export class Browser implements Component {
   }
 
   handleInput(data: string): void {
-    // Color scheme change notifications
-    if (data === COLOR_SCHEME_DARK || data.includes(COLOR_SCHEME_DARK)) {
-      this.onColorSchemeChange?.("dark");
-      return;
-    }
-    if (data === COLOR_SCHEME_LIGHT || data.includes(COLOR_SCHEME_LIGHT)) {
-      this.onColorSchemeChange?.("light");
-      return;
-    }
-
     if (this.filterMode) {
       this.handleFilterInput(data);
       return;
     }
 
     // Toggle help overlay.
-    if (data === "?") {
+    if (pmdMatches(data, "pmd.common.toggleHelp")) {
       this.showingHelp = !this.showingHelp;
       return;
     }
@@ -524,18 +494,13 @@ export class Browser implements Component {
     }
 
     // Quit
-    if (
-      matchesKey(data, Key.ctrl("c")) ||
-      data === "q" ||
-      data === "Q" ||
-      matchesKey(data, Key.escape)
-    ) {
+    if (pmdMatches(data, "pmd.common.quit")) {
       this.onQuit();
       return;
     }
 
     // Enter filter mode.
-    if (data === "/") {
+    if (pmdMatches(data, "pmd.browser.filter")) {
       this.filterMode = true;
       this.filterQuery = "";
       this.applyFilter();
@@ -543,7 +508,7 @@ export class Browser implements Component {
     }
 
     // Cycle sort key
-    if (data === "s" || data === "S") {
+    if (pmdMatches(data, "pmd.browser.cycleSort")) {
       if (!this.filterMode && !this.showingHelp) {
         if (this.sortKey === "path") {
           this.sortKey = "created";
@@ -558,7 +523,7 @@ export class Browser implements Component {
     }
 
     // Toggle sort direction
-    if (data === "r" || data === "R") {
+    if (pmdMatches(data, "pmd.browser.reverseSort")) {
       if (!this.filterMode && !this.showingHelp) {
         this.sortDirection = this.sortDirection === "asc" ? "desc" : "asc";
         this.applySort();
@@ -567,7 +532,7 @@ export class Browser implements Component {
     }
 
     // Open selected entry.
-    if (matchesKey(data, Key.enter)) {
+    if (pmdMatches(data, "pmd.browser.open")) {
       if (this.filtered.length > 0) {
         const entry = this.filtered[this.cursor];
         if (entry) this.onOpen(entry);
@@ -578,52 +543,52 @@ export class Browser implements Component {
     const pageSize = Math.max(1, this.getVisibleItemCount() - 1);
     const max = Math.max(0, this.filtered.length - 1);
 
-    if (matchesKey(data, Key.up) || data === "k") {
+    if (pmdMatches(data, "pmd.common.up")) {
       this.cursor = Math.max(0, this.cursor - 1);
       return;
     }
 
-    if (matchesKey(data, Key.down) || data === "j") {
+    if (pmdMatches(data, "pmd.common.down")) {
       this.cursor = Math.min(max, this.cursor + 1);
       return;
     }
 
-    if (matchesKey(data, Key.home) || data === "g") {
+    if (pmdMatches(data, "pmd.common.top")) {
       this.cursor = 0;
       this.scrollOffset = 0;
       return;
     }
 
-    if (matchesKey(data, Key.end) || data === "G") {
+    if (pmdMatches(data, "pmd.common.bottom")) {
       this.cursor = max;
       return;
     }
 
-    if (isPageUp(data) || data === "b" || data === "B") {
+    if (pmdMatches(data, "pmd.common.pageUp")) {
       this.cursor = Math.max(0, this.cursor - pageSize);
       return;
     }
 
-    if (isPageDown(data) || data === "f" || data === "F" || data === " ") {
+    if (pmdMatches(data, "pmd.common.pageDown")) {
       this.cursor = Math.min(max, this.cursor + pageSize);
       return;
     }
   }
 
   private handleFilterInput(data: string): void {
-    if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
+    if (pmdMatches(data, "pmd.common.cancel")) {
       this.filterMode = false;
       this.filterQuery = "";
       this.applyFilter();
       return;
     }
 
-    if (matchesKey(data, Key.enter)) {
+    if (pmdMatches(data, "pmd.common.confirm")) {
       this.filterMode = false;
       return;
     }
 
-    if (matchesKey(data, Key.backspace)) {
+    if (pmdMatches(data, "pmd.common.backspace")) {
       this.filterQuery = this.filterQuery.slice(0, -1);
       this.applyFilter();
       return;
