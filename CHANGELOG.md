@@ -1,5 +1,17 @@
 # preview-markdown
 
+## 0.6.0
+
+### Minor Changes
+
+- 868f943: Centralize pmd keybindings so browser and pager shortcuts use shared definitions.
+
+### Patch Changes
+
+- 66d5f71: Preload the Nix grammar so fenced Nix code blocks are syntax highlighted.
+- b13f7b8: Restore the terminal screen correctly after returning from the editor.
+- 66d5f71: Wrap long lines inside boxed code blocks so borders stay aligned.
+
 ## 0.5.0
 
 ### Minor Changes
