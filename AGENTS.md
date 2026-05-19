@@ -13,7 +13,7 @@ The app has two main modes, managed by a `Switcher` component that delegates ren
 - **Browser** (`src/browser.ts`): TUI file picker that scans a directory for `.md`/`.markdown`/`.mdx` files. Supports filtering, sorting, and recursive depth.
 - **Pager** (`src/pager.ts`): Scrollable viewer for a single markdown file. Handles search, line numbers, file watching, and opening `$EDITOR`.
 
-Both are built on top of `@earendil-works/pi-tui`, which provides the TUI framework and markdown rendering component. The project patches `pi-tui` to render code blocks with box-drawing borders instead of backtick markers (see `patches/` and the `pi-tui-patch` skill).
+Both are built on top of `@earendil-works/pi-tui`, which provides the TUI framework and markdown rendering component. The project patches `pi-tui` to render code blocks with box-drawing borders instead of backtick markers, with wrapping inside the box (see `patches/` and the `pi-tui-patch` skill).
 
 ### Key modules
 
@@ -23,6 +23,7 @@ Both are built on top of `@earendil-works/pi-tui`, which provides the TUI framew
 | `src/browser.ts` | Directory browser component |
 | `src/pager.ts` | Scrollable pager component |
 | `src/cli.ts` | Argument parsing and shell completion generation |
+| `src/keybindings.ts` | Centralized pmd keybinding definitions |
 | `src/theme.ts` | Theme resolution. Bundled Jellybeans themes + user-provided TextMate themes |
 | `src/highlighter.ts` | Shiki-based syntax highlighting for code blocks |
 | `src/mermaid.ts` | Mermaid diagram preprocessing (renders diagrams to ASCII) |

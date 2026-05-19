@@ -7,13 +7,15 @@ This project is an experiment in building a complete tool using AI coding agents
 ## Features
 
 - Directory browser: run `pmd` or `pmd <dir>` to browse and open markdown files
-- Syntax highlighting for code blocks with language labels
+- Syntax highlighting for fenced code blocks with boxed borders and language labels
+- Mermaid diagram support, rendered as ASCII
+- MDX support, with JSX stripped before rendering
 - Vim-style navigation (j/k, d/u, g/G, etc.)
 - Search with `/` and navigate matches with `n`/`N`
 - Edit file in `$EDITOR` with `e`, auto-reload on save
 - File watching for external changes
 - Light and dark mode (auto-detected or forced)
-- Pager mode or direct output (`--no-pager`)
+- Configurable line numbers, themes, and wrapping width
 
 ## Installation
 
@@ -76,17 +78,13 @@ pmd                     # Browse markdown files in current directory
 pmd docs/               # Browse markdown files in docs/
 pmd docs/ --depth 3     # Browse recursively up to 3 levels deep
 pmd README.md           # Open a file directly in the pager
-pmd --no-pager FILE.md  # Print to stdout without pager
 cat FILE.md | pmd       # Read from stdin
 ```
-
-`--no-pager` cannot be used with a directory argument.
 
 ### Options
 
 ```
--d, --depth N      Directory browser recursion depth (default: 1, top-level only)
--n, --no-pager     Display rendered markdown without pager (files only)
+-d, --depth N      Directory browser recursion depth (default: 1, includes direct subdirectories)
 -l, --line-numbers Show line numbers (pager only)
 -w, --width N      Word-wrap at width (0 to disable)
     --light        Force light mode
@@ -107,6 +105,8 @@ Browsing supports `.md`, `.markdown`, and `.mdx` files.
 | `G` / `End` | Go to bottom |
 | `/` | Filter files by name |
 | `Esc` | Clear filter |
+| `s` / `S` | Cycle sort mode |
+| `r` / `R` | Reverse sort order |
 | `Enter` | Open selected file |
 | `?` | Show help |
 | `q` / `Esc` | Quit |
@@ -126,22 +126,24 @@ Browsing supports `.md`, `.markdown`, and `.mdx` files.
 | `/` | Search |
 | `n` / `N` | Next/previous match |
 | `e` | Edit in $EDITOR |
+| `r` / `R` | Reload file |
+| `Ctrl+Z` | Suspend pmd |
 | `?` | Show help |
 | `q` / `Esc` | Quit (returns to browser if opened from one) |
 
 ### Shell Completions
 
 ```bash
-pmd completion bash > /etc/bash_completion.d/pmd
-pmd completion zsh > ~/.zsh/completions/_pmd
-pmd completion fish > ~/.config/fish/completions/pmd.fish
+pmd --completion bash > /etc/bash_completion.d/pmd
+pmd --completion zsh > ~/.zsh/completions/_pmd
+pmd --completion fish > ~/.config/fish/completions/pmd.fish
 ```
 
 ## Configuration
 
-Create a config file with `pmd config` or manually at `~/.config/pmd/config.json`.
+Create a config file with `pmd --init-config` or `pmd --config`, or manually at `~/.config/pmd/config.json`.
 
-See `.pmd.json` in this repo for an example.
+Local config is also supported via `.pmd.json` in the current directory and takes precedence over global config. See `.pmd.json` in this repo for an example.
 
 ## License
 
