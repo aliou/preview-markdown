@@ -163,8 +163,7 @@ export class Pager implements Component {
   }
 
   private getHelpHeight(): number {
-    // Help panel height: lines + 1 for top border/padding
-    return this.showingHelp ? HELP_LINES.length + 1 : 0;
+    return 0;
   }
 
   private getSearchHeight(): number {
@@ -261,13 +260,20 @@ export class Pager implements Component {
       visible.push(this.renderSearchInput(width));
     }
 
-    // Append help panel if showing
     if (this.showingHelp) {
-      visible.push(...this.renderHelp(width));
+      return this.renderCenteredOverlay(
+        visible,
+        width,
+        this.buildHelpBox(width),
+      );
     }
 
     if (this.showingToc) {
-      return this.renderTocOverlay(visible, width);
+      return this.renderCenteredOverlay(
+        visible,
+        width,
+        this.buildTocBox(width),
+      );
     }
 
     return visible;
@@ -288,37 +294,50 @@ export class Pager implements Component {
     return this.helpBgColor(this.helpFgColor(message + padding));
   }
 
-  private renderHelp(width: number): string[] {
-    const lines: string[] = [];
+  private buildHelpBox(maxWidth: number): string[] {
+    const overlayWidth = Math.max(
+      1,
+      Math.min(maxWidth, Math.max(40, Math.floor(maxWidth * 0.7))),
+    );
+    const innerWidth = Math.max(1, overlayWidth - 2);
+    const title = " Keyboard shortcuts ";
+    const lines = [
+      this.searchBgColor(
+        this.searchFgColor(`┌${title.padEnd(innerWidth, "─")}┐`),
+      ),
+    ];
 
-    // Empty line as separator/top padding
-    const helpEmptyLine = this.helpBgColor(" ".repeat(width));
-    lines.push(helpEmptyLine);
-
-    // Render each help line, left-aligned with padding
-    for (const line of HELP_LINES) {
-      const paddedLine = `  ${line}${" ".repeat(Math.max(0, width - line.length - 2))}`;
-      lines.push(this.helpBgColor(this.helpFgColor(paddedLine)));
+    for (const helpLine of HELP_LINES) {
+      const body =
+        visibleWidth(helpLine) > innerWidth
+          ? `${sliceByColumn(helpLine, 0, Math.max(0, innerWidth - 1), true)}…`
+          : `${helpLine}${" ".repeat(Math.max(0, innerWidth - visibleWidth(helpLine)))}`;
+      lines.push(
+        `${this.searchBgColor(this.searchFgColor("│"))}${this.bgColor(this.fgColor(body))}${this.searchBgColor(this.searchFgColor("│"))}`,
+      );
     }
 
+    lines.push(
+      this.searchBgColor(this.searchFgColor(`└${"─".repeat(innerWidth)}┘`)),
+    );
     return lines;
   }
 
-  private renderTocOverlay(base: string[], width: number): string[] {
+  private renderCenteredOverlay(
+    base: string[],
+    width: number,
+    lines: string[],
+  ): string[] {
     const overlayWidth = Math.max(
-      1,
-      Math.min(width, Math.max(40, Math.floor(width * 0.7))),
+      0,
+      ...lines.map((line) => visibleWidth(line)),
     );
-    const overlayHeight = Math.min(
-      Math.max(6, this.tocEntries.length + 4),
-      Math.max(3, this.viewportHeight - 4),
-    );
+    const overlayHeight = lines.length;
     const left = Math.max(0, Math.floor((width - overlayWidth) / 2));
     const top = Math.max(
       0,
       Math.floor((this.viewportHeight - overlayHeight) / 2),
     );
-    const lines = this.buildTocBox(overlayWidth, overlayHeight);
     const output = [...base];
 
     for (let i = 0; i < lines.length; i++) {
@@ -377,7 +396,15 @@ export class Pager implements Component {
       : sliceByColumn(result, 0, totalWidth, true);
   }
 
-  private buildTocBox(width: number, height: number): string[] {
+  private buildTocBox(maxWidth: number): string[] {
+    const width = Math.max(
+      1,
+      Math.min(maxWidth, Math.max(40, Math.floor(maxWidth * 0.7))),
+    );
+    const height = Math.min(
+      Math.max(6, this.tocEntries.length + 4),
+      Math.max(3, this.viewportHeight - 4),
+    );
     const lines: string[] = [];
     const innerWidth = Math.max(1, width - 2);
     const title = " Table of contents ";
