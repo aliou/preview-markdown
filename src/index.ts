@@ -22,7 +22,7 @@ import { createHighlightCodeFn, initSyntaxHighlighter } from "./highlighter.js";
 import { PMD_KEYBINDINGS } from "./keybindings.js";
 import { preprocessMdx } from "./mdx.js";
 import { preprocessMermaid } from "./mermaid.js";
-import { Pager } from "./pager.js";
+import { Pager, type TocEntry } from "./pager.js";
 import {
   buildDefaultTextStyle,
   buildMarkdownTheme,
@@ -66,6 +66,34 @@ async function readStdin(): Promise<string> {
     chunks.push(chunk);
   }
   return Buffer.concat(chunks).toString("utf8");
+}
+
+function extractTocEntries(content: string): TocEntry[] {
+  const entries: TocEntry[] = [];
+  let inFence = false;
+
+  content.split(/\r?\n/).forEach((line, index) => {
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence;
+      return;
+    }
+    if (inFence) return;
+
+    const match = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
+    if (!match) return;
+
+    const marker = match[1];
+    const title = match[2];
+    if (!marker || !title) return;
+
+    entries.push({
+      level: marker.length,
+      title: title.trim(),
+      line: index + 1,
+    });
+  });
+
+  return entries;
 }
 
 // Delegates render/input/invalidate to whichever component is currently active.
@@ -391,7 +419,7 @@ async function main(): Promise<void> {
             defaultTextStyle,
             getMermaidMaxWidth(),
           );
-          activePager.setContent(newComponent);
+          activePager.setContent(newComponent, extractTocEntries(newContent));
         } catch {
           // File temporarily unavailable
         }
@@ -425,6 +453,7 @@ async function main(): Promise<void> {
     pagerFilePath: string | null,
     pagerFilename: string,
     fromBrowser: boolean,
+    tocEntries: TocEntry[],
   ): { pager: Pager; statusBar: StatusBar } {
     let pager: Pager;
 
@@ -458,7 +487,7 @@ async function main(): Promise<void> {
               defaultTextStyle,
               getMermaidMaxWidth(),
             );
-            pager.setContent(newComponent);
+            pager.setContent(newComponent, extractTocEntries(newContent));
             pager.setFileChanged(false);
             tui.requestRender(true);
           } catch {
@@ -482,7 +511,7 @@ async function main(): Promise<void> {
               defaultTextStyle,
               getMermaidMaxWidth(),
             );
-            pager.setContent(newComponent);
+            pager.setContent(newComponent, extractTocEntries(newContent));
           } catch {
             // Ignore read errors after edit
           }
@@ -497,6 +526,7 @@ async function main(): Promise<void> {
       },
       showLineNumbers,
       wrapWidth: options.width,
+      tocEntries,
       ...buildPagerColors(),
     });
 
@@ -535,6 +565,7 @@ async function main(): Promise<void> {
         entry.absolutePath,
         entry.relativePath,
         true,
+        extractTocEntries(fileContent),
       );
 
       activePager = pager;
@@ -586,6 +617,7 @@ async function main(): Promise<void> {
       filePath,
       filename,
       false,
+      extractTocEntries(content),
     );
 
     activePager = pager;

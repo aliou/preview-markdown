@@ -28,6 +28,7 @@ declare module "@earendil-works/pi-tui" {
     "pmd.pager.suspend": true;
     "pmd.pager.halfPageUp": true;
     "pmd.pager.halfPageDown": true;
+    "pmd.pager.toggleToc": true;
   }
 }
 
@@ -123,6 +124,10 @@ export const PMD_KEYBINDINGS = {
   "pmd.pager.halfPageDown": {
     defaultKeys: ["d", "shift+d"],
     description: "Half page down",
+  },
+  "pmd.pager.toggleToc": {
+    defaultKeys: "shift+t",
+    description: "Toggle table of contents",
   },
 } as const satisfies KeybindingDefinitions;
 

@@ -1,5 +1,10 @@
 import type { Component } from "@earendil-works/pi-tui";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import {
+  extractSegments,
+  sliceByColumn,
+  sliceWithWidth,
+} from "@earendil-works/pi-tui/dist/utils.js";
 import { pmdMatches } from "./keybindings.js";
 
 // Strip ANSI escape codes for text searching
@@ -16,9 +21,16 @@ const HELP_LINES = [
   "f/pgdn  page down      n/N     next/prev match",
   "u  ½ page up           r       reload file",
   "d  ½ page down         e       edit in $EDITOR",
+  "T                      table of contents",
   "                       ?       toggle help",
   "                       q/esc   quit",
 ];
+
+export interface TocEntry {
+  level: number;
+  title: string;
+  line: number;
+}
 
 // Line number column width (4 digits + 1 space)
 const LINE_NUMBER_WIDTH = 5;
@@ -40,6 +52,7 @@ export interface PagerOptions {
   lineNumberColor?: (text: string) => string;
   matchColor?: (text: string) => string;
   currentMatchColor?: (text: string) => string;
+  tocEntries?: TocEntry[];
 }
 
 export class Pager implements Component {
@@ -56,6 +69,9 @@ export class Pager implements Component {
   private cachedWidth = 0;
   private viewportHeight = 0;
   private showingHelp = false;
+  private showingToc = false;
+  private tocEntries: TocEntry[] = [];
+  private tocIndex = 0;
   private bgColor: (text: string) => string;
   private fgColor: (text: string) => string;
   private helpBgColor: (text: string) => string;
@@ -89,11 +105,24 @@ export class Pager implements Component {
     this.lineNumberColor = options.lineNumberColor ?? ((t) => t);
     this.matchColor = options.matchColor ?? ((t) => t);
     this.currentMatchColor = options.currentMatchColor ?? ((t) => t);
+    this.tocEntries = options.tocEntries ?? [];
   }
 
-  setContent(content: Component): void {
+  setContent(content: Component, tocEntries?: TocEntry[]): void {
+    if (tocEntries) {
+      this.tocEntries = tocEntries;
+      this.tocIndex = Math.min(
+        this.tocIndex,
+        Math.max(0, tocEntries.length - 1),
+      );
+    }
     this.content = content;
     this.invalidate();
+  }
+
+  setTocEntries(tocEntries: TocEntry[]): void {
+    this.tocEntries = tocEntries;
+    this.tocIndex = Math.min(this.tocIndex, Math.max(0, tocEntries.length - 1));
   }
 
   setViewportHeight(height: number): void {
@@ -237,6 +266,10 @@ export class Pager implements Component {
       visible.push(...this.renderHelp(width));
     }
 
+    if (this.showingToc) {
+      return this.renderTocOverlay(visible, width);
+    }
+
     return visible;
   }
 
@@ -271,10 +304,143 @@ export class Pager implements Component {
     return lines;
   }
 
+  private renderTocOverlay(base: string[], width: number): string[] {
+    const overlayWidth = Math.max(
+      1,
+      Math.min(width, Math.max(40, Math.floor(width * 0.7))),
+    );
+    const overlayHeight = Math.min(
+      Math.max(6, this.tocEntries.length + 4),
+      Math.max(3, this.viewportHeight - 4),
+    );
+    const left = Math.max(0, Math.floor((width - overlayWidth) / 2));
+    const top = Math.max(
+      0,
+      Math.floor((this.viewportHeight - overlayHeight) / 2),
+    );
+    const lines = this.buildTocBox(overlayWidth, overlayHeight);
+    const output = [...base];
+
+    for (let i = 0; i < lines.length; i++) {
+      const target = top + i;
+      if (target >= output.length) break;
+      output[target] = this.compositeLineAt(
+        output[target] ?? "",
+        lines[i] ?? "",
+        left,
+        overlayWidth,
+        width,
+      );
+    }
+
+    return output;
+  }
+
+  private compositeLineAt(
+    baseLine: string,
+    overlayLine: string,
+    startCol: number,
+    overlayWidth: number,
+    totalWidth: number,
+  ): string {
+    const afterStart = startCol + overlayWidth;
+    const base = extractSegments(
+      baseLine,
+      startCol,
+      afterStart,
+      totalWidth - afterStart,
+      true,
+    );
+    const overlay = sliceWithWidth(overlayLine, 0, overlayWidth, true);
+    const reset = "\x1b[0m\x1b]8;;\x07";
+    const beforePad = Math.max(0, startCol - base.beforeWidth);
+    const overlayPad = Math.max(0, overlayWidth - overlay.width);
+    const actualBeforeWidth = Math.max(startCol, base.beforeWidth);
+    const actualOverlayWidth = Math.max(overlayWidth, overlay.width);
+    const afterTarget = Math.max(
+      0,
+      totalWidth - actualBeforeWidth - actualOverlayWidth,
+    );
+    const afterPad = Math.max(0, afterTarget - base.afterWidth);
+    const result =
+      base.before +
+      " ".repeat(beforePad) +
+      reset +
+      overlay.text +
+      " ".repeat(overlayPad) +
+      reset +
+      base.after +
+      " ".repeat(afterPad);
+
+    return visibleWidth(result) <= totalWidth
+      ? result
+      : sliceByColumn(result, 0, totalWidth, true);
+  }
+
+  private buildTocBox(width: number, height: number): string[] {
+    const lines: string[] = [];
+    const innerWidth = Math.max(1, width - 2);
+    const title = " Table of contents ";
+    lines.push(
+      this.searchBgColor(
+        this.searchFgColor(`┌${title.padEnd(innerWidth, "─")}┐`),
+      ),
+    );
+
+    if (this.tocEntries.length === 0) {
+      lines.push(
+        this.bgColor(
+          this.fgColor(`│${" No headings".padEnd(innerWidth, " ")}│`),
+        ),
+      );
+    } else {
+      const listHeight = height - 3;
+      const start = Math.max(
+        0,
+        Math.min(
+          this.tocIndex - Math.floor(listHeight / 2),
+          this.tocEntries.length - listHeight,
+        ),
+      );
+      const end = Math.min(this.tocEntries.length, start + listHeight);
+
+      for (let i = start; i < end; i++) {
+        const entry = this.tocEntries[i];
+        if (!entry) continue;
+        const isSelected = i === this.tocIndex;
+        const prefix = isSelected ? "›" : " ";
+        const indent = "  ".repeat(Math.max(0, entry.level - 1));
+        const title = `${prefix} ${indent}${entry.title}`;
+        const body =
+          visibleWidth(title) > innerWidth
+            ? `${sliceByColumn(title, 0, Math.max(0, innerWidth - 1), true)}…`
+            : `${title}${" ".repeat(Math.max(0, innerWidth - visibleWidth(title)))}`;
+        const coloredBody = isSelected
+          ? this.currentMatchColor(body)
+          : this.bgColor(this.fgColor(body));
+        lines.push(
+          `${this.searchBgColor(this.searchFgColor("│"))}${coloredBody}${this.searchBgColor(this.searchFgColor("│"))}`,
+        );
+      }
+    }
+
+    const empty = this.bgColor(this.fgColor(`│${" ".repeat(innerWidth)}│`));
+    while (lines.length < height - 1) lines.push(empty);
+    lines.push(
+      this.searchBgColor(this.searchFgColor(`└${"─".repeat(innerWidth)}┘`)),
+    );
+    return lines;
+  }
+
   handleInput(data: string): void {
     // Handle search mode input separately
     if (this.searchMode) {
       this.handleSearchInput(data);
+      return;
+    }
+
+    if (this.showingToc) {
+      this.handleTocInput(data);
       return;
     }
 
@@ -283,6 +449,13 @@ export class Pager implements Component {
       if (this.onSuspend) {
         this.onSuspend();
       }
+      return;
+    }
+
+    // Toggle TOC
+    if (pmdMatches(data, "pmd.pager.toggleToc")) {
+      this.showingToc = true;
+      this.showingHelp = false;
       return;
     }
 
@@ -395,6 +568,47 @@ export class Pager implements Component {
         this.scrollOffset + Math.floor(pageSize / 2),
       );
       return;
+    }
+  }
+
+  private handleTocInput(data: string): void {
+    if (
+      pmdMatches(data, "pmd.common.cancel") ||
+      pmdMatches(data, "pmd.common.quit") ||
+      pmdMatches(data, "pmd.pager.toggleToc")
+    ) {
+      this.showingToc = false;
+      return;
+    }
+
+    if (this.tocEntries.length === 0) return;
+
+    if (pmdMatches(data, "pmd.common.up")) {
+      this.tocIndex = Math.max(0, this.tocIndex - 1);
+      return;
+    }
+
+    if (pmdMatches(data, "pmd.common.down")) {
+      this.tocIndex = Math.min(this.tocEntries.length - 1, this.tocIndex + 1);
+      return;
+    }
+
+    if (pmdMatches(data, "pmd.common.top")) {
+      this.tocIndex = 0;
+      return;
+    }
+
+    if (pmdMatches(data, "pmd.common.bottom")) {
+      this.tocIndex = this.tocEntries.length - 1;
+      return;
+    }
+
+    if (pmdMatches(data, "pmd.common.confirm")) {
+      const entry = this.tocEntries[this.tocIndex];
+      if (entry) {
+        this.scrollOffset = Math.max(0, entry.line - 1);
+      }
+      this.showingToc = false;
     }
   }
 
