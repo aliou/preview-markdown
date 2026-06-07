@@ -1,5 +1,11 @@
 # preview-markdown
 
+## 0.6.1
+
+### Patch Changes
+
+- efb77a6: Add x86_64 Linux release binaries and expose the CLI through the flake packages.
+
 ## 0.6.0
 
 ### Minor Changes
