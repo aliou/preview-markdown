@@ -4,6 +4,7 @@ import { $ } from "bun";
 const targets = [
   { target: "bun-darwin-arm64", outfile: "dist/pmd-darwin-arm64" },
   { target: "bun-linux-arm64", outfile: "dist/pmd-linux-arm64" },
+  { target: "bun-linux-x64", outfile: "dist/pmd-linux-x64" },
 ];
 
 await $`rm -rf dist && mkdir -p dist`;

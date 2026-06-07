@@ -20,7 +20,11 @@
         };
         "aarch64-linux" = {
           url = "https://github.com/aliou/preview-markdown/releases/download/v${version}/pmd-linux-arm64";
-          hash = "sha256-TBCWlqEgjGGlknCe7nQae0AXUEC1TLadXXtTiGz4dtE="; # linux
+          hash = "sha256-TBCWlqEgjGGlknCe7nQae0AXUEC1TLadXXtTiGz4dtE="; # linux-arm64
+        };
+        "x86_64-linux" = {
+          url = "https://github.com/aliou/preview-markdown/releases/download/v${version}/pmd-linux-x64";
+          hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="; # linux-x64
         };
       };
 
@@ -89,12 +93,12 @@
             description = "Terminal markdown pager with syntax highlighting";
             homepage = "https://github.com/aliou/preview-markdown";
             license = licenses.mit;
-            platforms = [ "aarch64-darwin" "aarch64-linux" ];
+            platforms = [ "aarch64-darwin" "aarch64-linux" "x86_64-linux" ];
             mainProgram = "pmd";
           };
         };
     in
-    flake-utils.lib.eachSystem [ "aarch64-darwin" "aarch64-linux" ] (system:
+    flake-utils.lib.eachSystem [ "aarch64-darwin" "aarch64-linux" "x86_64-linux" ] (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
         pmd = buildFromSource pkgs;

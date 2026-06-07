@@ -25,12 +25,16 @@ console.log("Computing hashes...");
 const darwinHash = (
   await $`nix hash file --sri dist/pmd-darwin-arm64`.text()
 ).trim();
-const linuxHash = (
+const linuxArmHash = (
   await $`nix hash file --sri dist/pmd-linux-arm64`.text()
+).trim();
+const linuxX64Hash = (
+  await $`nix hash file --sri dist/pmd-linux-x64`.text()
 ).trim();
 
 console.log(`Darwin hash: ${darwinHash}`);
-console.log(`Linux hash: ${linuxHash}`);
+console.log(`Linux ARM64 hash: ${linuxArmHash}`);
+console.log(`Linux x64 hash: ${linuxX64Hash}`);
 
 // Update flake.nix
 let flake = await Bun.file("flake.nix").text();
@@ -44,10 +48,14 @@ flake = flake.replace(
   `$1"${darwinHash}"`,
 );
 
-// Update linux hash
+// Update linux hashes
 flake = flake.replace(
   /("aarch64-linux"[\s\S]*?hash = )"sha256-[^"]*"/,
-  `$1"${linuxHash}"`,
+  `$1"${linuxArmHash}"`,
+);
+flake = flake.replace(
+  /("x86_64-linux"[\s\S]*?hash = )"sha256-[^"]*"/,
+  `$1"${linuxX64Hash}"`,
 );
 
 await Bun.write("flake.nix", flake);

@@ -101,13 +101,16 @@ jobs:
           
           # Compute hashes
           DARWIN_HASH=$(nix hash file --sri dist/pmd-darwin-arm64)
-          LINUX_HASH=$(nix hash file --sri dist/pmd-linux-arm64)
+          LINUX_ARM_HASH=$(nix hash file --sri dist/pmd-linux-arm64)
+          LINUX_X64_HASH=$(nix hash file --sri dist/pmd-linux-x64)
           echo "Darwin hash: $DARWIN_HASH"
-          echo "Linux hash: $LINUX_HASH"
+          echo "Linux ARM64 hash: $LINUX_ARM_HASH"
+          echo "Linux x64 hash: $LINUX_X64_HASH"
           
           # Update flake.nix with correct hashes
           sed -i "s|hash = \"sha256-.*\"; # darwin|hash = \"${DARWIN_HASH}\"; # darwin|" flake.nix
-          sed -i "s|hash = \"sha256-.*\"; # linux|hash = \"${LINUX_HASH}\"; # linux|" flake.nix
+          sed -i "s|hash = \"sha256-.*\"; # linux-arm64|hash = \"${LINUX_ARM_HASH}\"; # linux-arm64|" flake.nix
+          sed -i "s|hash = \"sha256-.*\"; # linux-x64|hash = \"${LINUX_X64_HASH}\"; # linux-x64|" flake.nix
           
           # Commit hash update if changed
           git add flake.nix
@@ -126,6 +129,7 @@ jobs:
             --title "${TAG}" \
             --generate-notes \
             dist/pmd-darwin-arm64 \
-            dist/pmd-linux-arm64
+            dist/pmd-linux-arm64 \
+            dist/pmd-linux-x64
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
