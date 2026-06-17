@@ -1,84 +1,71 @@
 diff --git a/dist/components/markdown.js b/dist/components/markdown.js
-index 1f73455cddb2159279193624b6f703b9da275680..e4bad8783e783eb3bc3a7da18c543aecca8cc92f 100644
+index 1f73455cddb2159279193624b6f703b9da275680..496c48ad8b8551d35ae1393d9baab13adef0a8e3 100644
 --- a/dist/components/markdown.js
 +++ b/dist/components/markdown.js
-@@ -21,6 +21,15 @@
- markdownParser.setOptions({
-     tokenizer: new StrictStrikethroughTokenizer(),
- });
-+// Box drawing characters for code blocks
-+const BOX_CHARS = {
-+    topLeft: "╭",
-+    topRight: "╮",
-+    bottomLeft: "╰",
-+    bottomRight: "╯",
-+    horizontal: "─",
-+    vertical: "│",
-+};
- export class Markdown {
-     text;
-     paddingX; // Left/right padding
-@@ -196,6 +205,59 @@
+@@ -70,13 +70,15 @@ export class Markdown {
+         const tokens = markdownParser.lexer(normalizedText);
+         // Convert tokens to styled terminal output
+         const renderedLines = [];
++        let prevTokenType;
+         for (let i = 0; i < tokens.length; i++) {
+             const token = tokens[i];
+             const nextToken = tokens[i + 1];
+-            const tokenLines = this.renderToken(token, contentWidth, nextToken?.type);
++            const tokenLines = this.renderToken(token, contentWidth, nextToken?.type, undefined, prevTokenType);
+             for (const tokenLine of tokenLines) {
+                 renderedLines.push(tokenLine);
+             }
++            prevTokenType = token.type;
+         }
+         // Wrap lines (NO padding, NO background yet)
+         const wrappedLines = [];
+@@ -196,7 +198,44 @@ export class Markdown {
              stylePrefix: this.getDefaultStylePrefix(),
          };
      }
+-    renderToken(token, width, nextTokenType, styleContext) {
 +    /**
-+     * Render a code block with a box border and language label.
++     * Render a code block as an indented block with a tinted background.
 +     */
 +    renderCodeBlock(code, lang, availableWidth) {
 +        const lines = [];
-+        const borderStyle = this.theme.codeBlockBorder;
++        const codeBlockStyle = this.theme.codeBlock;
++        const indent = "  ";
++        const codeWidth = Math.max(1, availableWidth - indent.length);
++        const width = Math.max(0, availableWidth);
++        const fallbackPadding = codeBlockStyle(" ".repeat(width));
++        const topPadding = this.theme.codeBlockPaddingTop
++            ? this.theme.codeBlockPaddingTop("▀".repeat(width))
++            : fallbackPadding;
++        const bottomPadding = this.theme.codeBlockPaddingBottom
++            ? this.theme.codeBlockPaddingBottom("▄".repeat(width))
++            : fallbackPadding;
++        // Get highlighted or plain code lines.
 +        let codeLines;
 +        if (this.theme.highlightCode) {
 +            codeLines = this.theme.highlightCode(code, lang);
 +        }
 +        else {
-+            codeLines = code.split("\n").map((line) => this.theme.codeBlock(line));
++            codeLines = code.split("\n");
 +        }
-+        let maxLineWidth = 0;
-+        for (const line of codeLines) {
-+            const lineWidth = visibleWidth(line);
-+            if (lineWidth > maxLineWidth) {
-+                maxLineWidth = lineWidth;
-+            }
-+        }
-+        const maxInnerWidth = Math.max(2, availableWidth - 2);
-+        const maxLabelWidth = Math.max(0, maxInnerWidth - 4);
-+        const rawLangLabel = lang || "";
-+        const langLabel = rawLangLabel.length > maxLabelWidth ? rawLangLabel.slice(0, maxLabelWidth) : rawLangLabel;
-+        const minWidthForLabel = langLabel ? visibleWidth(langLabel) + 4 : 2;
-+        const innerWidth = Math.min(maxInnerWidth, Math.max(maxLineWidth + 2, minWidthForLabel, 2));
-+        const codeContentWidth = Math.max(1, innerWidth - 2);
-+        let topBorder;
-+        if (langLabel) {
-+            const labelPart = `${BOX_CHARS.horizontal} ${langLabel} `;
-+            const remainingWidth = innerWidth - visibleWidth(labelPart);
-+            topBorder = BOX_CHARS.topLeft + labelPart + BOX_CHARS.horizontal.repeat(Math.max(0, remainingWidth)) + BOX_CHARS.topRight;
-+        }
-+        else {
-+            topBorder = BOX_CHARS.topLeft + BOX_CHARS.horizontal.repeat(innerWidth) + BOX_CHARS.topRight;
-+        }
-+        lines.push(borderStyle(topBorder));
-+        const continuationIndent = "  ";
-+        const wrappedCodeWidth = Math.max(1, codeContentWidth - visibleWidth(continuationIndent));
++        lines.push(topPadding);
 +        for (const codeLine of codeLines) {
-+            const wrappedCodeLines = wrapTextWithAnsi(codeLine, wrappedCodeWidth);
-+            for (let i = 0; i < wrappedCodeLines.length; i++) {
-+                const wrappedCodeLine = i === 0 ? wrappedCodeLines[i] : continuationIndent + wrappedCodeLines[i];
-+                const lineWidth = visibleWidth(wrappedCodeLine);
-+                const padding = " ".repeat(Math.max(0, codeContentWidth - lineWidth));
-+                const line = borderStyle(BOX_CHARS.vertical) + " " + wrappedCodeLine + padding + " " + borderStyle(BOX_CHARS.vertical);
-+                lines.push(line);
++            const wrappedLines = wrapTextWithAnsi(codeLine, codeWidth);
++            for (const wrappedLine of wrappedLines) {
++                const visibleLen = visibleWidth(wrappedLine);
++                const padding = " ".repeat(Math.max(0, availableWidth - indent.length - visibleLen));
++                const content = indent + wrappedLine + padding;
++                lines.push(codeBlockStyle(content));
 +            }
 +        }
-+        const bottomBorder = BOX_CHARS.bottomLeft + BOX_CHARS.horizontal.repeat(innerWidth) + BOX_CHARS.bottomRight;
-+        lines.push(borderStyle(bottomBorder));
++        lines.push(bottomPadding);
 +        return lines;
 +    }
-     renderToken(token, width, nextTokenType, styleContext) {
++    renderToken(token, width, nextTokenType, styleContext, prevTokenType) {
          const lines = [];
          switch (token.type) {
-@@ -237,22 +299,8 @@
+             case "heading": {
+@@ -237,25 +276,8 @@ export class Markdown {
                  lines.push(this.renderInlineTokens([token], styleContext));
                  break;
              case "code": {
@@ -98,8 +85,24 @@ index 1f73455cddb2159279193624b6f703b9da275680..e4bad8783e783eb3bc3a7da18c543aec
 -                    }
 -                }
 -                lines.push(this.theme.codeBlockBorder("```"));
+-                if (nextTokenType && nextTokenType !== "space") {
+-                    lines.push(""); // Add spacing after code blocks (unless space token follows)
+-                }
 +                const codeBlockLines = this.renderCodeBlock(token.text, token.lang, width);
 +                lines.push(...codeBlockLines);
-                 if (nextTokenType && nextTokenType !== "space") {
-                     lines.push(""); // Add spacing after code blocks (unless space token follows)
+                 break;
+             }
+             case "list": {
+@@ -325,7 +347,11 @@ export class Markdown {
                  }
+                 break;
+             case "space":
+-                // Space tokens represent blank lines in markdown
++                // Space tokens represent blank lines in markdown.
++                // Skip spacing directly around code blocks; the block supplies its own padding.
++                if (prevTokenType === "code" || nextTokenType === "code") {
++                    break;
++                }
+                 lines.push("");
+                 break;
+             default:

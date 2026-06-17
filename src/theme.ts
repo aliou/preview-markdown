@@ -318,7 +318,14 @@ export function resolveTheme(
 export function buildMarkdownTheme(
   colors: MarkdownColors,
   highlightCode?: (code: string, lang?: string) => string[],
-): MarkdownTheme {
+): MarkdownTheme & {
+  codeBlockPaddingTop: (text: string) => string;
+  codeBlockPaddingBottom: (text: string) => string;
+} {
+  const codeBlockPadding = chalk
+    .bgHex(colors.codeBlockBackground)
+    .hex(colors.background);
+
   return {
     heading: chalk.hex(colors.heading),
     link: chalk.hex(colors.link),
@@ -326,6 +333,8 @@ export function buildMarkdownTheme(
     code: chalk.hex(colors.code),
     codeBlock: chalk.hex(colors.foreground).bgHex(colors.codeBlockBackground),
     codeBlockBorder: chalk.hex(colors.codeBlockBorder),
+    codeBlockPaddingTop: codeBlockPadding,
+    codeBlockPaddingBottom: codeBlockPadding,
     quote: chalk.hex(colors.quote),
     quoteBorder: chalk.hex(colors.quoteBorder),
     hr: chalk.hex(colors.hr),

@@ -1,17 +1,17 @@
 ---
 name: pi-tui-patch
-description: Regenerate the pi-tui patch for boxed code blocks when updating the @earendil-works/pi-tui dependency. Use when upgrading pi-tui or when the patch fails to apply.
+description: Regenerate the pi-tui patch that styles fenced code blocks as indented blocks with a tinted background. Use when upgrading pi-tui or when the patch fails to apply.
 ---
 
 # pi-tui Patch Regeneration
 
-This project patches `@earendil-works/pi-tui` to render code blocks with box borders instead of backtick markers.
+This project patches `@earendil-works/pi-tui` so fenced code blocks are rendered as indented blocks with a tinted background, while still keeping syntax highlighting.
 
 ## When to Use
 
 - Updating `@earendil-works/pi-tui` to a new version
 - Patch fails to apply after `bun install`
-- Modifying the boxed code block feature
+- Modifying the code block rendering style
 
 ## Current Patch Location
 
@@ -23,14 +23,18 @@ patches/@earendil-works%2Fpi-tui@<version>.patch
 
 Modifies `dist/components/markdown.js` to:
 
-1. Add `BOX_CHARS` constant for box drawing characters
-2. Add `renderCodeBlock()` method that renders code with borders:
-   ```
-   ╭─ javascript ──────────╮
-   │ const x = 1;          │
-   ╰───────────────────────╯
-   ```
-3. Replace backtick-style rendering in `renderToken()` case "code"
+1. Add a `renderCodeBlock()` method that wraps each code line with `theme.codeBlock`.
+2. Adds a small left indent and pads each code-block line to the full content width so the tinted background extends edge-to-edge.
+3. Adds a half-height tinted padding line above and below the code lines for visual separation, using `theme.codeBlockPaddingTop`/`codeBlockPaddingBottom` if available and falling back to a full background line otherwise.
+4. Replaces the backtick-style rendering in `renderToken()` case "code" with a call to `renderCodeBlock()`.
+5. Suppresses blank `space` tokens immediately before or after a code block so the half-height padding sits flush against surrounding text.
+
+The resulting output looks like a block of text with a different background, e.g.:
+
+```
+  const x = 1;
+  console.log(x);
+```
 
 ## Regeneration Steps
 
@@ -59,84 +63,56 @@ rm patches/@earendil-works%2Fpi-tui@<old-version>.patch
 
 ### 4. Apply modifications to node_modules
 
-Edit `node_modules/@earendil-works/pi-tui/dist/components/markdown.js`:
-
-**Add after `markdownParser.setOptions(...)`:**
-
-```javascript
-// Box drawing characters for code blocks
-const BOX_CHARS = {
-    topLeft: "╭",
-    topRight: "╮",
-    bottomLeft: "╰",
-    bottomRight: "╯",
-    horizontal: "─",
-    vertical: "│",
-};
-```
+Edit `node_modules/@earendil-works/pi-tui/dist/components/markdown.js`.
 
 **Add the `renderCodeBlock` method after `getDefaultInlineStyleContext()`:**
 
 ```javascript
 /**
- * Render a code block with a box border and language label.
+ * Render a code block as an indented block with a tinted background.
  */
 renderCodeBlock(code, lang, availableWidth) {
     const lines = [];
-    const borderStyle = this.theme.codeBlockBorder;
-    
-    // Get highlighted or plain code lines
+    const codeBlockStyle = this.theme.codeBlock;
+    const indent = "  ";
+    const codeWidth = Math.max(1, availableWidth - indent.length);
+    const width = Math.max(0, availableWidth);
+    const fallbackPadding = codeBlockStyle(" ".repeat(width));
+    const topPadding = this.theme.codeBlockPaddingTop
+        ? this.theme.codeBlockPaddingTop("▀".repeat(width))
+        : fallbackPadding;
+    const bottomPadding = this.theme.codeBlockPaddingBottom
+        ? this.theme.codeBlockPaddingBottom("▄".repeat(width))
+        : fallbackPadding;
+
+    // Get highlighted or plain code lines.
     let codeLines;
     if (this.theme.highlightCode) {
         codeLines = this.theme.highlightCode(code, lang);
     } else {
-        codeLines = code.split("\n").map(line => this.theme.codeBlock(line));
+        codeLines = code.split("\n");
     }
-    
-    // Calculate the maximum line width (visible characters only)
-    let maxLineWidth = 0;
-    for (const line of codeLines) {
-        const lineWidth = visibleWidth(line);
-        if (lineWidth > maxLineWidth) {
-            maxLineWidth = lineWidth;
+
+    lines.push(topPadding);
+    for (const codeLine of codeLines) {
+        const wrappedLines = wrapTextWithAnsi(codeLine, codeWidth);
+        for (const wrappedLine of wrappedLines) {
+            const visibleLen = visibleWidth(wrappedLine);
+            const padding = " ".repeat(Math.max(0, availableWidth - indent.length - visibleLen));
+            const content = indent + wrappedLine + padding;
+            lines.push(codeBlockStyle(content));
         }
     }
-    
-    // Box inner width: max of (longest line + padding, lang label + padding)
-    const langLabel = lang || "";
-    const minWidthForLabel = langLabel.length + 4;
-    const innerWidth = Math.max(maxLineWidth + 2, minWidthForLabel);
-    
-    // Build top border with language label
-    let topBorder;
-    if (langLabel) {
-        const labelPart = `${BOX_CHARS.horizontal} ${langLabel} `;
-        const remainingWidth = innerWidth - labelPart.length;
-        topBorder = BOX_CHARS.topLeft + labelPart + BOX_CHARS.horizontal.repeat(Math.max(0, remainingWidth)) + BOX_CHARS.topRight;
-    } else {
-        topBorder = BOX_CHARS.topLeft + BOX_CHARS.horizontal.repeat(innerWidth) + BOX_CHARS.topRight;
-    }
-    lines.push(borderStyle(topBorder));
-    
-    // Render each code line with side borders
-    for (const codeLine of codeLines) {
-        const lineWidth = visibleWidth(codeLine);
-        const padding = " ".repeat(Math.max(0, innerWidth - lineWidth - 1));
-        const line = borderStyle(BOX_CHARS.vertical) + " " + codeLine + padding + borderStyle(BOX_CHARS.vertical);
-        lines.push(line);
-    }
-    
-    // Build bottom border
-    const bottomBorder = BOX_CHARS.bottomLeft + BOX_CHARS.horizontal.repeat(innerWidth) + BOX_CHARS.bottomRight;
-    lines.push(borderStyle(bottomBorder));
-    
+    lines.push(bottomPadding);
+
     return lines;
 }
 ```
 
 **Replace the "code" case in `renderToken()`:**
 
-Find:
+Find (approximately):
+
 ```javascript
 case "code": {
     lines.push(this.theme.codeBlockBorder(`\`\`\`${token.lang || ""}`));
@@ -145,10 +121,73 @@ case "code": {
 ```
 
 Replace with:
+
 ```javascript
 case "code": {
     const codeBlockLines = this.renderCodeBlock(token.text, token.lang, width);
     lines.push(...codeBlockLines);
+```
+
+**Track the previous token type in the main render loop and pass it to `renderToken()`:**
+
+Find:
+
+```javascript
+const renderedLines = [];
+for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    const nextToken = tokens[i + 1];
+    const tokenLines = this.renderToken(token, contentWidth, nextToken?.type);
+    for (const tokenLine of tokenLines) {
+        renderedLines.push(tokenLine);
+    }
+}
+```
+
+Replace with:
+
+```javascript
+const renderedLines = [];
+let prevTokenType;
+for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    const nextToken = tokens[i + 1];
+    const tokenLines = this.renderToken(token, contentWidth, nextToken?.type, undefined, prevTokenType);
+    for (const tokenLine of tokenLines) {
+        renderedLines.push(tokenLine);
+    }
+    prevTokenType = token.type;
+}
+```
+
+Update the `renderToken()` signature:
+
+```javascript
+renderToken(token, width, nextTokenType, styleContext, prevTokenType) {
+```
+
+**Suppress blank lines around code blocks in the `"space"` case:**
+
+Find:
+
+```javascript
+case "space":
+    // Space tokens represent blank lines in markdown
+    lines.push("");
+    break;
+```
+
+Replace with:
+
+```javascript
+case "space":
+    // Space tokens represent blank lines in markdown.
+    // Skip spacing directly around code blocks; the block supplies its own padding.
+    if (prevTokenType === "code" || nextTokenType === "code") {
+        break;
+    }
+    lines.push("");
+    break;
 ```
 
 ### 5. Generate the new patch
@@ -157,16 +196,19 @@ case "code": {
 bun patch --commit @earendil-works/pi-tui
 ```
 
+If bun includes an unrelated `.bun-tag-*` file in the generated patch, remove that diff from `patches/@earendil-works%2Fpi-tui@<new-version>.patch` so only the `markdown.js` hunk remains.
+
 ### 6. Verify
 
 ```bash
+bun install
 bun run typecheck
 bun run src/index.ts README.md
 ```
 
 ## Reference
 
-The full patched `markdown.js` can be found by applying the current patch and examining the result:
+The full patched `markdown.js` can be found by applying the current patch:
 
 ```bash
 cat node_modules/@earendil-works/pi-tui/dist/components/markdown.js
