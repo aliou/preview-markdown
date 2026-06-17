@@ -8,7 +8,7 @@
 
   outputs = { self, nixpkgs, flake-utils }:
     let
-      version = "0.6.1";
+      version = "0.7.0";
 
       # Binary hashes for releases - update these after each release
       # Run: nix-prefetch-url --type sha256 <url>
@@ -16,15 +16,15 @@
       binaries = {
         "aarch64-darwin" = {
           url = "https://github.com/aliou/preview-markdown/releases/download/v${version}/pmd-darwin-arm64";
-          hash = "sha256-eHXt/YFf1HX2rIWscq27I1s84GbG5w9Ad3SJtzJUN7Q="; # darwin
+          hash = "sha256-synJUaG/ngQn9zPqiWVz5cr5r8RnDPHe9XYv+WyLMS0="; # darwin
         };
         "aarch64-linux" = {
           url = "https://github.com/aliou/preview-markdown/releases/download/v${version}/pmd-linux-arm64";
-          hash = "sha256-jvcQG4QxlFnrdOAHPFDcgIdBBI3UjesqLyeQGZGrUb8="; # linux-arm64
+          hash = "sha256-2vO1mF9fnL3kmKFbib/iX/rYCAUwCkujxRijr5jv3XE="; # linux-arm64
         };
         "x86_64-linux" = {
           url = "https://github.com/aliou/preview-markdown/releases/download/v${version}/pmd-linux-x64";
-          hash = "sha256-uTeDYeAOQhjWKtNBUgdlXPxE88nhCHthfuhvay/D+7U="; # linux-x64
+          hash = "sha256-gjX5riK88nNbOyMLjH5/G7yUE5sA/ATiQvqX+d1YSVQ="; # linux-x64
         };
       };
 
