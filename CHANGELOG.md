@@ -1,5 +1,11 @@
 # preview-markdown
 
+## 0.7.0
+
+### Minor Changes
+
+- 24395b3: Render fenced code blocks as indented blocks with a tinted background instead of boxed borders, and add half-height padding rows above and below each block.
+
 ## 0.6.1
 
 ### Patch Changes
