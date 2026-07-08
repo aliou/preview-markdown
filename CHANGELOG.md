@@ -1,5 +1,11 @@
 # preview-markdown
 
+## 0.8.0
+
+### Minor Changes
+
+- bccd835: Render block-level HTML comments as tinted comment blocks with dim text, keeping the `<!--` and `-->` markers.
+
 ## 0.7.0
 
 ### Minor Changes
