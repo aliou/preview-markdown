@@ -38,8 +38,10 @@ export interface MarkdownColors {
   heading: string;
   link: string;
   linkUrl: string;
+  comment: string;
   code: string;
   codeBlockBackground: string;
+  commentBlockBackground: string;
   codeBlockBorder: string;
   quote: string;
   quoteBorder: string;
@@ -207,6 +209,9 @@ export function deriveMarkdownColors(theme: TextMateTheme): MarkdownColors {
   const codeBlockBackground = isDark
     ? lighten(background, 0.06)
     : darken(background, 0.04);
+  const commentBlockBackground = isDark
+    ? lighten(background, 0.03)
+    : darken(background, 0.02);
 
   // Search match highlighting colors
   const searchMatch = isDark ? "#b8860b" : "#c8a000";
@@ -218,8 +223,10 @@ export function deriveMarkdownColors(theme: TextMateTheme): MarkdownColors {
     heading,
     link,
     linkUrl: comment,
+    comment,
     code,
     codeBlockBackground,
+    commentBlockBackground,
     codeBlockBorder: comment,
     quote,
     quoteBorder: comment,
@@ -321,9 +328,16 @@ export function buildMarkdownTheme(
 ): MarkdownTheme & {
   codeBlockPaddingTop: (text: string) => string;
   codeBlockPaddingBottom: (text: string) => string;
+  commentBlock: (text: string) => string;
+  commentBlockPaddingTop: (text: string) => string;
+  commentBlockPaddingBottom: (text: string) => string;
 } {
   const codeBlockPadding = chalk
     .bgHex(colors.codeBlockBackground)
+    .hex(colors.background);
+
+  const commentBlockPadding = chalk
+    .bgHex(colors.commentBlockBackground)
     .hex(colors.background);
 
   return {
@@ -335,6 +349,11 @@ export function buildMarkdownTheme(
     codeBlockBorder: chalk.hex(colors.codeBlockBorder),
     codeBlockPaddingTop: codeBlockPadding,
     codeBlockPaddingBottom: codeBlockPadding,
+    commentBlock: chalk
+      .hex(colors.comment)
+      .bgHex(colors.commentBlockBackground),
+    commentBlockPaddingTop: commentBlockPadding,
+    commentBlockPaddingBottom: commentBlockPadding,
     quote: chalk.hex(colors.quote),
     quoteBorder: chalk.hex(colors.quoteBorder),
     hr: chalk.hex(colors.hr),

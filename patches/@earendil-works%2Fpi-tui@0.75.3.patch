@@ -1,8 +1,8 @@
 diff --git a/dist/components/markdown.js b/dist/components/markdown.js
-index 1f73455cddb2159279193624b6f703b9da275680..496c48ad8b8551d35ae1393d9baab13adef0a8e3 100644
+index 1f73455..47390fa 100644
 --- a/dist/components/markdown.js
 +++ b/dist/components/markdown.js
-@@ -70,13 +70,15 @@ export class Markdown {
+@@ -70,13 +70,16 @@ export class Markdown {
          const tokens = markdownParser.lexer(normalizedText);
          // Convert tokens to styled terminal output
          const renderedLines = [];
@@ -11,34 +11,58 @@ index 1f73455cddb2159279193624b6f703b9da275680..496c48ad8b8551d35ae1393d9baab13a
              const token = tokens[i];
              const nextToken = tokens[i + 1];
 -            const tokenLines = this.renderToken(token, contentWidth, nextToken?.type);
-+            const tokenLines = this.renderToken(token, contentWidth, nextToken?.type, undefined, prevTokenType);
++            const nextTokenType = this.getEffectiveTokenType(nextToken);
++            const tokenLines = this.renderToken(token, contentWidth, nextTokenType, undefined, prevTokenType);
              for (const tokenLine of tokenLines) {
                  renderedLines.push(tokenLine);
              }
-+            prevTokenType = token.type;
++            prevTokenType = this.getEffectiveTokenType(token);
          }
          // Wrap lines (NO padding, NO background yet)
          const wrappedLines = [];
-@@ -196,7 +198,44 @@ export class Markdown {
+@@ -196,7 +199,67 @@ export class Markdown {
              stylePrefix: this.getDefaultStylePrefix(),
          };
      }
 -    renderToken(token, width, nextTokenType, styleContext) {
 +    /**
++     * Return the token type to use for spacing decisions.
++     * HTML comments are treated like code blocks so their tinted padding
++     * controls spacing instead of surrounding blank lines.
++     */
++    getEffectiveTokenType(token) {
++        if (!token) {
++            return undefined;
++        }
++        if (token.type === "html" && /^\s*<!--[\s\S]*?-->\s*$/.test(token.raw)) {
++            return "html_comment";
++        }
++        return token.type;
++    }
++    /**
 +     * Render a code block as an indented block with a tinted background.
 +     */
 +    renderCodeBlock(code, lang, availableWidth) {
++        const isCommentBlock = lang === "html-comment";
 +        const lines = [];
-+        const codeBlockStyle = this.theme.codeBlock;
++        const blockStyle = isCommentBlock && this.theme.commentBlock
++            ? this.theme.commentBlock
++            : this.theme.codeBlock;
 +        const indent = "  ";
 +        const codeWidth = Math.max(1, availableWidth - indent.length);
 +        const width = Math.max(0, availableWidth);
-+        const fallbackPadding = codeBlockStyle(" ".repeat(width));
-+        const topPadding = this.theme.codeBlockPaddingTop
-+            ? this.theme.codeBlockPaddingTop("▀".repeat(width))
++        const fallbackPadding = blockStyle(" ".repeat(width));
++        const topPaddingStyle = isCommentBlock && this.theme.commentBlockPaddingTop
++            ? this.theme.commentBlockPaddingTop
++            : this.theme.codeBlockPaddingTop;
++        const bottomPaddingStyle = isCommentBlock && this.theme.commentBlockPaddingBottom
++            ? this.theme.commentBlockPaddingBottom
++            : this.theme.codeBlockPaddingBottom;
++        const topPadding = topPaddingStyle
++            ? topPaddingStyle("▀".repeat(width))
 +            : fallbackPadding;
-+        const bottomPadding = this.theme.codeBlockPaddingBottom
-+            ? this.theme.codeBlockPaddingBottom("▄".repeat(width))
++        const bottomPadding = bottomPaddingStyle
++            ? bottomPaddingStyle("▄".repeat(width))
 +            : fallbackPadding;
 +        // Get highlighted or plain code lines.
 +        let codeLines;
@@ -55,7 +79,7 @@ index 1f73455cddb2159279193624b6f703b9da275680..496c48ad8b8551d35ae1393d9baab13a
 +                const visibleLen = visibleWidth(wrappedLine);
 +                const padding = " ".repeat(Math.max(0, availableWidth - indent.length - visibleLen));
 +                const content = indent + wrappedLine + padding;
-+                lines.push(codeBlockStyle(content));
++                lines.push(blockStyle(content));
 +            }
 +        }
 +        lines.push(bottomPadding);
@@ -65,7 +89,7 @@ index 1f73455cddb2159279193624b6f703b9da275680..496c48ad8b8551d35ae1393d9baab13a
          const lines = [];
          switch (token.type) {
              case "heading": {
-@@ -237,25 +276,8 @@ export class Markdown {
+@@ -237,25 +300,8 @@ export class Markdown {
                  lines.push(this.renderInlineTokens([token], styleContext));
                  break;
              case "code": {
@@ -93,14 +117,38 @@ index 1f73455cddb2159279193624b6f703b9da275680..496c48ad8b8551d35ae1393d9baab13a
                  break;
              }
              case "list": {
-@@ -325,7 +347,11 @@ export class Markdown {
+@@ -318,14 +364,33 @@ export class Markdown {
+                     lines.push(""); // Add spacing after horizontal rules (unless space token follows)
                  }
                  break;
+-            case "html":
++            case "html": {
+                 // Render HTML as plain text (escaped for terminal)
+                 if ("raw" in token && typeof token.raw === "string") {
+-                    lines.push(this.applyDefaultStyle(token.raw.trim()));
++                    const raw = token.raw.trim();
++                    if (raw.startsWith("<!--") && raw.endsWith("-->")) {
++                        lines.push(...this.renderCodeBlock(raw, "html-comment", width));
++                    }
++                    else {
++                        if (prevTokenType === "html_comment") {
++                            lines.push(""); // Separate from a preceding comment block
++                        }
++                        lines.push(this.applyDefaultStyle(raw));
++                        if (nextTokenType === "html_comment") {
++                            lines.push(""); // Separate from a following comment block
++                        }
++                    }
+                 }
+                 break;
++            }
              case "space":
 -                // Space tokens represent blank lines in markdown
 +                // Space tokens represent blank lines in markdown.
-+                // Skip spacing directly around code blocks; the block supplies its own padding.
-+                if (prevTokenType === "code" || nextTokenType === "code") {
++                // Skip spacing directly around code blocks and HTML comment blocks;
++                // the block supplies its own padding.
++                if (prevTokenType === "code" || nextTokenType === "code" ||
++                    prevTokenType === "html_comment" || nextTokenType === "html_comment") {
 +                    break;
 +                }
                  lines.push("");
