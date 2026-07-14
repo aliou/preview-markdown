@@ -6,8 +6,8 @@ import chalk from "chalk";
 import { APP_NAME } from "./constants.js";
 
 // Bundled themes (imported as JSON)
-import jellybeansDark from "./themes/jellybeans-dark.json";
-import jellybeansLight from "./themes/jellybeans-light.json";
+import senzuDark from "./themes/senzu-dark.json";
+import senzuLight from "./themes/senzu-light.json";
 
 /**
  * TextMate theme structure (subset we care about)
@@ -71,12 +71,12 @@ export interface ResolvedTheme {
 
 // Bundled themes registry
 const BUNDLED_THEMES: Record<string, TextMateTheme> = {
-  "jellybeans-dark": jellybeansDark as unknown as TextMateTheme,
-  "jellybeans-light": jellybeansLight as unknown as TextMateTheme,
+  "senzu-dark": senzuDark as unknown as TextMateTheme,
+  "senzu-light": senzuLight as unknown as TextMateTheme,
 };
 
-const DEFAULT_DARK_THEME = "jellybeans-dark";
-const DEFAULT_LIGHT_THEME = "jellybeans-light";
+const DEFAULT_DARK_THEME = "senzu-dark";
+const DEFAULT_LIGHT_THEME = "senzu-light";
 
 /**
  * Get the themes directory path
@@ -169,9 +169,9 @@ export function deriveMarkdownColors(theme: TextMateTheme): MarkdownColors {
 
   // Base colors
   const background =
-    theme.colors?.["editor.background"] || (isDark ? "#151515" : "#f7f3eb");
+    theme.colors?.["editor.background"] || (isDark ? "#151515" : "#f5e6d3");
   const foreground =
-    theme.colors?.["editor.foreground"] || (isDark ? "#e8e8d3" : "#2d2c2a");
+    theme.colors?.["editor.foreground"] || (isDark ? "#e8e8d3" : "#252525");
 
   // Find colors from token scopes with fallbacks
   const heading =

@@ -24,7 +24,7 @@ Both are built on top of `@earendil-works/pi-tui`, which provides the TUI framew
 | `src/pager.ts` | Scrollable pager component |
 | `src/cli.ts` | Argument parsing and shell completion generation |
 | `src/keybindings.ts` | Centralized pmd keybinding definitions |
-| `src/theme.ts` | Theme resolution. Bundled Jellybeans themes + user-provided TextMate themes |
+| `src/theme.ts` | Theme resolution. Bundled Senzu themes + user-provided TextMate themes |
 | `src/highlighter.ts` | Shiki-based syntax highlighting for code blocks |
 | `src/mermaid.ts` | Mermaid diagram preprocessing (renders diagrams to ASCII) |
 | `src/mdx.ts` | MDX preprocessing (strips JSX so the markdown renderer can handle it) |

@@ -24,12 +24,12 @@
             "dark": {
               "type": "string",
               "description": "Theme name for dark mode",
-              "default": "jellybeans-dark"
+              "default": "senzu-dark"
             },
             "light": {
               "type": "string",
               "description": "Theme name for light mode",
-              "default": "jellybeans-light"
+              "default": "senzu-light"
             }
           },
           "required": ["dark", "light"],

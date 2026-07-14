@@ -22,8 +22,8 @@ const SCHEMA_URL =
 const defaultConfig: Config = {
   showLineNumbers: false,
   theme: {
-    dark: "jellybeans-dark",
-    light: "jellybeans-light",
+    dark: "senzu-dark",
+    light: "senzu-light",
   },
 };
 

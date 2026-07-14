@@ -133,120 +133,6 @@
       homeManagerModules.default = { config, lib, pkgs, ... }:
         let
           cfg = config.programs.pmd;
-
-          themeType = lib.types.submodule {
-            options = {
-              heading = lib.mkOption {
-                type = lib.types.str;
-                description = "Color for headings";
-              };
-              link = lib.mkOption {
-                type = lib.types.str;
-                description = "Color for link text";
-              };
-              linkUrl = lib.mkOption {
-                type = lib.types.str;
-                description = "Color for link URLs";
-              };
-              code = lib.mkOption {
-                type = lib.types.str;
-                description = "Color for inline code";
-              };
-              codeBlock = lib.mkOption {
-                type = lib.types.str;
-                description = "Color for code block content";
-              };
-              codeBlockBorder = lib.mkOption {
-                type = lib.types.str;
-                description = "Color for code block delimiters";
-              };
-              quote = lib.mkOption {
-                type = lib.types.str;
-                description = "Color for blockquote text";
-              };
-              quoteBorder = lib.mkOption {
-                type = lib.types.str;
-                description = "Color for blockquote border";
-              };
-              hr = lib.mkOption {
-                type = lib.types.str;
-                description = "Color for horizontal rules";
-              };
-              listBullet = lib.mkOption {
-                type = lib.types.str;
-                description = "Color for list bullets/numbers";
-              };
-              bold = lib.mkOption {
-                type = lib.types.bool;
-                default = true;
-                description = "Enable bold formatting";
-              };
-              italic = lib.mkOption {
-                type = lib.types.bool;
-                default = true;
-                description = "Enable italic formatting";
-              };
-              strikethrough = lib.mkOption {
-                type = lib.types.bool;
-                default = true;
-                description = "Enable strikethrough formatting";
-              };
-              underline = lib.mkOption {
-                type = lib.types.bool;
-                default = true;
-                description = "Enable underline formatting";
-              };
-              textColor = lib.mkOption {
-                type = lib.types.str;
-                description = "Default text color";
-              };
-              bgColor = lib.mkOption {
-                type = lib.types.str;
-                default = "";
-                description = "Background color (empty for transparent)";
-              };
-            };
-          };
-
-          # Jellybeans Dark palette
-          defaultDarkTheme = {
-            heading = "#8fbfdc";
-            link = "#8fbfdc";
-            linkUrl = "#888888";
-            code = "#fad07a";
-            codeBlock = "#e8e8d3";
-            codeBlockBorder = "#888888";
-            quote = "#99ad6a";
-            quoteBorder = "#888888";
-            hr = "#606060";
-            listBullet = "#c6b6ee";
-            bold = true;
-            italic = true;
-            strikethrough = true;
-            underline = true;
-            textColor = "#e8e8d3";
-            bgColor = "#151515";
-          };
-
-          # Jellybeans Muted Light palette
-          defaultLightTheme = {
-            heading = "#3c5971";
-            link = "#3c5971";
-            linkUrl = "#909090";
-            code = "#a07542";
-            codeBlock = "#2d2c2a";
-            codeBlockBorder = "#909090";
-            quote = "#4a6335";
-            quoteBorder = "#909090";
-            hr = "#909090";
-            listBullet = "#655683";
-            bold = true;
-            italic = true;
-            strikethrough = true;
-            underline = true;
-            textColor = "#2d2c2a";
-            bgColor = "#f7f3eb";
-          };
         in
         {
           options.programs.pmd = {
@@ -258,16 +144,22 @@
               description = "The pmd package to use";
             };
 
-            dark = lib.mkOption {
-              type = themeType;
-              default = defaultDarkTheme;
-              description = "Dark theme configuration (Jellybeans palette)";
+            showLineNumbers = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = "Show line numbers in the pager";
             };
 
-            light = lib.mkOption {
-              type = themeType;
-              default = defaultLightTheme;
-              description = "Light theme configuration (Jellybeans Muted Light palette)";
+            darkTheme = lib.mkOption {
+              type = lib.types.str;
+              default = "senzu-dark";
+              description = "Theme name for dark mode (bundled: senzu-dark, senzu-light; or a user theme in ~/.config/pmd/themes/)";
+            };
+
+            lightTheme = lib.mkOption {
+              type = lib.types.str;
+              default = "senzu-light";
+              description = "Theme name for light mode (bundled: senzu-dark, senzu-light; or a user theme in ~/.config/pmd/themes/)";
             };
           };
 
@@ -275,8 +167,11 @@
             home.packages = [ cfg.package ];
 
             xdg.configFile."pmd/config.json".text = builtins.toJSON {
-              dark = cfg.dark;
-              light = cfg.light;
+              showLineNumbers = cfg.showLineNumbers;
+              theme = {
+                dark = cfg.darkTheme;
+                light = cfg.lightTheme;
+              };
             };
           };
         };
