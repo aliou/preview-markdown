@@ -5,6 +5,11 @@
   "description": "Configuration file for pmd (preview-markdown)",
   "type": "object",
   "properties": {
+    "$schema": {
+      "type": "string",
+      "format": "uri",
+      "description": "JSON Schema URL for editor validation"
+    },
     "showLineNumbers": {
       "type": "boolean",
       "description": "Show line numbers in the pager",
