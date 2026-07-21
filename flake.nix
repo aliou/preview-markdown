@@ -8,7 +8,7 @@
 
   outputs = { self, nixpkgs, flake-utils }:
     let
-      version = "0.9.0";
+      version = "0.9.1";
 
       # Binary hashes for releases - update these after each release
       # Run: nix-prefetch-url --type sha256 <url>
