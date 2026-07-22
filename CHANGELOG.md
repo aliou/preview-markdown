@@ -1,5 +1,11 @@
 # preview-markdown
 
+## 0.9.1
+
+### Patch Changes
+
+- bf07d9f: Allow the `$schema` key in pmd configuration files.
+
 ## 0.9.0
 
 ### Minor Changes
