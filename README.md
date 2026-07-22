@@ -152,6 +152,8 @@ Create a config file with `pmd --init-config` or `pmd --config`, or manually at 
 
 Local config is also supported via `.pmd.json` in the current directory and takes precedence over global config. See `.pmd.json` in this repo for an example.
 
+When viewing a file in a Git worktree, pmd automatically shows a Git status gutter. It compares the working tree with `HEAD`; green marks additions, yellow modifications, red deletion boundaries, and blue moved lines.
+
 ## License
 
 MIT

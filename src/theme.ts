@@ -57,6 +57,11 @@ export interface MarkdownColors {
   // Search match highlighting colors
   searchMatch: string;
   searchCurrentMatch: string;
+  // Git gutter colors
+  gitAdded: string;
+  gitModified: string;
+  gitDeleted: string;
+  gitMoved: string;
 }
 
 /**
@@ -216,6 +221,10 @@ export function deriveMarkdownColors(theme: TextMateTheme): MarkdownColors {
   // Search match highlighting colors
   const searchMatch = isDark ? "#b8860b" : "#c8a000";
   const searchCurrentMatch = isDark ? "#d2691e" : "#cc5500";
+  const gitAdded = isDark ? "#238636" : "#2da44e";
+  const gitModified = isDark ? "#9e6a03" : "#bf8700";
+  const gitDeleted = isDark ? "#da3633" : "#cf222e";
+  const gitMoved = isDark ? "#1f6feb" : "#0969da";
 
   return {
     background,
@@ -239,6 +248,10 @@ export function deriveMarkdownColors(theme: TextMateTheme): MarkdownColors {
     helpFg: comment,
     searchMatch,
     searchCurrentMatch,
+    gitAdded,
+    gitModified,
+    gitDeleted,
+    gitMoved,
   };
 }
 

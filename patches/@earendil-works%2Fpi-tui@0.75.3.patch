@@ -1,26 +1,206 @@
+diff --git a/dist/components/markdown.d.ts b/dist/components/markdown.d.ts
+index 18b550815fa638bb8aca7be411279349d8576278..af7cf7a89f36d74a63e852c0ef553b93e91dd1cf 100644
+--- a/dist/components/markdown.d.ts
++++ b/dist/components/markdown.d.ts
+@@ -40,6 +40,14 @@ export interface MarkdownTheme {
+     /** Prefix applied to each rendered code block line (default: "  ") */
+     codeBlockIndent?: string;
+ }
++export interface MarkdownSourceSpan {
++    startLine: number;
++    endLine: number;
++}
++export interface MarkdownRenderWithSourceMap {
++    lines: string[];
++    sourceSpans: Array<MarkdownSourceSpan | null>;
++}
+ export declare class Markdown implements Component {
+     private text;
+     private paddingX;
+@@ -50,10 +58,12 @@ export declare class Markdown implements Component {
+     private cachedText?;
+     private cachedWidth?;
+     private cachedLines?;
++    private cachedSourceSpans?;
+     constructor(text: string, paddingX: number, paddingY: number, theme: MarkdownTheme, defaultTextStyle?: DefaultTextStyle);
+     setText(text: string): void;
+     invalidate(): void;
+     render(width: number): string[];
++    renderWithSourceMap(width: number): MarkdownRenderWithSourceMap;
+     /**
+      * Apply default text style to a string.
+      * This is the base styling applied to all text content.
+@@ -64,6 +74,9 @@ export declare class Markdown implements Component {
+     private getDefaultStylePrefix;
+     private getStylePrefix;
+     private getDefaultInlineStyleContext;
++    private getSourceSpan;
++    private getSourceLineAdvance;
++    private getTokenLineSourceSpan;
+     private renderToken;
+     private renderInlineTokens;
+     /**
 diff --git a/dist/components/markdown.js b/dist/components/markdown.js
-index 1f73455..47390fa 100644
+index 1f73455cddb2159279193624b6f703b9da275680..c01d06707f680ee5d9e1f40811ab37f6b2cd3a1f 100644
 --- a/dist/components/markdown.js
 +++ b/dist/components/markdown.js
-@@ -70,13 +70,16 @@ export class Markdown {
+@@ -32,6 +32,7 @@ export class Markdown {
+     cachedText;
+     cachedWidth;
+     cachedLines;
++    cachedSourceSpans;
+     constructor(text, paddingX, paddingY, theme, defaultTextStyle) {
+         this.text = text;
+         this.paddingX = paddingX;
+@@ -47,11 +48,18 @@ export class Markdown {
+         this.cachedText = undefined;
+         this.cachedWidth = undefined;
+         this.cachedLines = undefined;
++        this.cachedSourceSpans = undefined;
+     }
+     render(width) {
++        return this.renderWithSourceMap(width).lines;
++    }
++    renderWithSourceMap(width) {
+         // Check cache
+-        if (this.cachedLines && this.cachedText === this.text && this.cachedWidth === width) {
+-            return this.cachedLines;
++        if (this.cachedLines && this.cachedSourceSpans && this.cachedText === this.text && this.cachedWidth === width) {
++            return {
++                lines: this.cachedLines,
++                sourceSpans: this.cachedSourceSpans,
++            };
+         }
+         // Calculate available width for content (subtract horizontal padding)
+         const contentWidth = Math.max(1, width - this.paddingX * 2);
+@@ -62,7 +70,8 @@ export class Markdown {
+             this.cachedText = this.text;
+             this.cachedWidth = width;
+             this.cachedLines = result;
+-            return result;
++            this.cachedSourceSpans = [];
++            return { lines: result, sourceSpans: [] };
+         }
+         // Replace tabs with 3 spaces for consistent rendering
+         const normalizedText = this.text.replace(/\t/g, "   ");
+@@ -70,23 +79,36 @@ export class Markdown {
          const tokens = markdownParser.lexer(normalizedText);
          // Convert tokens to styled terminal output
          const renderedLines = [];
 +        let prevTokenType;
++        let sourceLine = 1;
          for (let i = 0; i < tokens.length; i++) {
              const token = tokens[i];
              const nextToken = tokens[i + 1];
 -            const tokenLines = this.renderToken(token, contentWidth, nextToken?.type);
+-            for (const tokenLine of tokenLines) {
+-                renderedLines.push(tokenLine);
 +            const nextTokenType = this.getEffectiveTokenType(nextToken);
 +            const tokenLines = this.renderToken(token, contentWidth, nextTokenType, undefined, prevTokenType);
-             for (const tokenLine of tokenLines) {
-                 renderedLines.push(tokenLine);
++            const sourceSpan = this.getSourceSpan(sourceLine, token.raw || "");
++            sourceLine += this.getSourceLineAdvance(token.raw || "");
++            for (let lineIndex = 0; lineIndex < tokenLines.length; lineIndex++) {
++                const tokenLine = tokenLines[lineIndex];
++                renderedLines.push({
++                    text: tokenLine,
++                    sourceSpan: this.getTokenLineSourceSpan(token, tokenLine, lineIndex, tokenLines.length, sourceSpan),
++                });
              }
 +            prevTokenType = this.getEffectiveTokenType(token);
          }
          // Wrap lines (NO padding, NO background yet)
          const wrappedLines = [];
-@@ -196,7 +199,67 @@ export class Markdown {
+-        for (const line of renderedLines) {
+-            if (isImageLine(line)) {
+-                wrappedLines.push(line);
++        for (const renderedLine of renderedLines) {
++            if (isImageLine(renderedLine.text)) {
++                wrappedLines.push(renderedLine);
+             }
+             else {
+-                for (const wrappedLine of wrapTextWithAnsi(line, contentWidth)) {
+-                    wrappedLines.push(wrappedLine);
++                for (const wrappedLine of wrapTextWithAnsi(renderedLine.text, contentWidth)) {
++                    wrappedLines.push({
++                        text: wrappedLine,
++                        sourceSpan: renderedLine.sourceSpan,
++                    });
+                 }
+             }
+         }
+@@ -95,12 +117,14 @@ export class Markdown {
+         const rightMargin = " ".repeat(this.paddingX);
+         const bgFn = this.defaultTextStyle?.bgColor;
+         const contentLines = [];
+-        for (const line of wrappedLines) {
+-            if (isImageLine(line)) {
+-                contentLines.push(line);
++        const contentSourceSpans = [];
++        for (const wrappedLine of wrappedLines) {
++            if (isImageLine(wrappedLine.text)) {
++                contentLines.push(wrappedLine.text);
++                contentSourceSpans.push(wrappedLine.sourceSpan);
+                 continue;
+             }
+-            const lineWithMargins = leftMargin + line + rightMargin;
++            const lineWithMargins = leftMargin + wrappedLine.text + rightMargin;
+             if (bgFn) {
+                 contentLines.push(applyBackgroundToLine(lineWithMargins, width, bgFn));
+             }
+@@ -110,6 +134,7 @@ export class Markdown {
+                 const paddingNeeded = Math.max(0, width - visibleLen);
+                 contentLines.push(lineWithMargins + " ".repeat(paddingNeeded));
+             }
++            contentSourceSpans.push(wrappedLine.sourceSpan);
+         }
+         // Add top/bottom padding (empty lines)
+         const emptyLine = " ".repeat(width);
+@@ -119,12 +144,42 @@ export class Markdown {
+             emptyLines.push(line);
+         }
+         // Combine top padding, content, and bottom padding
++        const sourceSpans = new Array(emptyLines.length).fill(null).concat(contentSourceSpans, new Array(emptyLines.length).fill(null));
+         const result = emptyLines.concat(contentLines, emptyLines);
++        const lines = result.length > 0 ? result : [""];
++        const resolvedSourceSpans = result.length > 0 ? sourceSpans : [null];
+         // Update cache
+         this.cachedText = this.text;
+         this.cachedWidth = width;
+-        this.cachedLines = result;
+-        return result.length > 0 ? result : [""];
++        this.cachedLines = lines;
++        this.cachedSourceSpans = resolvedSourceSpans;
++        return { lines, sourceSpans: resolvedSourceSpans };
++    }
++    getSourceSpan(startLine, raw) {
++        const newlineCount = this.getSourceLineAdvance(raw);
++        const trailingNewlines = (raw.match(/\n+$/) || [""])[0].length;
++        return {
++            startLine,
++            endLine: Math.max(startLine, startLine + newlineCount - trailingNewlines),
++        };
++    }
++    getSourceLineAdvance(raw) {
++        return (raw.match(/\n/g) || []).length;
++    }
++    getTokenLineSourceSpan(token, line, lineIndex, lineCount, sourceSpan) {
++        if (token.type === "space") {
++            return sourceSpan;
++        }
++        if (line === "") {
++            return null;
++        }
++        if (token.type === "code" && (lineIndex === 0 || lineIndex === lineCount - 1)) {
++            return null;
++        }
++        if (token.type === "table" && /^[┌├└]/.test(line)) {
++            return null;
++        }
++        return sourceSpan;
+     }
+     /**
+      * Apply default text style to a string.
+@@ -196,7 +251,67 @@ export class Markdown {
              stylePrefix: this.getDefaultStylePrefix(),
          };
      }
@@ -89,7 +269,7 @@ index 1f73455..47390fa 100644
          const lines = [];
          switch (token.type) {
              case "heading": {
-@@ -237,25 +300,8 @@ export class Markdown {
+@@ -237,25 +352,8 @@ export class Markdown {
                  lines.push(this.renderInlineTokens([token], styleContext));
                  break;
              case "code": {
@@ -117,7 +297,7 @@ index 1f73455..47390fa 100644
                  break;
              }
              case "list": {
-@@ -318,14 +364,33 @@ export class Markdown {
+@@ -318,14 +416,33 @@ export class Markdown {
                      lines.push(""); // Add spacing after horizontal rules (unless space token follows)
                  }
                  break;

@@ -5,7 +5,9 @@ import {
   sliceByColumn,
   sliceWithWidth,
 } from "@earendil-works/pi-tui/dist/utils.js";
+import type { GitLineStatus } from "./git.js";
 import { pmdMatches } from "./keybindings.js";
+import type { SourceSpan } from "./source-map.js";
 
 // Strip ANSI escape codes for text searching
 const ANSI_REGEX = /\x1b\[[0-9;]*m/g;
@@ -34,6 +36,26 @@ export interface TocEntry {
 
 // Line number column width (4 digits + 1 space)
 const LINE_NUMBER_WIDTH = 5;
+const GIT_GUTTER_WIDTH = 1;
+const GIT_GUTTER_GLYPH = "▎";
+
+interface SourceMappedRenderResult {
+  lines: string[];
+  sourceSpans: Array<SourceSpan | null>;
+}
+
+interface SourceMappedComponent extends Component {
+  renderWithSourceMap(width: number): SourceMappedRenderResult;
+}
+
+function isSourceMappedComponent(
+  component: Component,
+): component is SourceMappedComponent {
+  return (
+    "renderWithSourceMap" in component &&
+    typeof component.renderWithSourceMap === "function"
+  );
+}
 
 export interface PagerOptions {
   content: Component;
@@ -42,6 +64,7 @@ export interface PagerOptions {
   onReload?: () => void;
   onSuspend?: () => void;
   showLineNumbers?: boolean;
+  gitStatusForSpan?: (span: SourceSpan | null) => GitLineStatus | null;
   wrapWidth?: number;
   bgColor?: (text: string) => string;
   fgColor?: (text: string) => string;
@@ -52,6 +75,10 @@ export interface PagerOptions {
   lineNumberColor?: (text: string) => string;
   matchColor?: (text: string) => string;
   currentMatchColor?: (text: string) => string;
+  gitAddedColor?: (text: string) => string;
+  gitModifiedColor?: (text: string) => string;
+  gitDeletedColor?: (text: string) => string;
+  gitMovedColor?: (text: string) => string;
   tocEntries?: TocEntry[];
 }
 
@@ -66,6 +93,7 @@ export class Pager implements Component {
   private wrapWidth: number;
   private scrollOffset = 0;
   private cachedLines: string[] = [];
+  private cachedSourceSpans: Array<SourceSpan | null> = [];
   private cachedWidth = 0;
   private viewportHeight = 0;
   private showingHelp = false;
@@ -81,6 +109,11 @@ export class Pager implements Component {
   private lineNumberColor: (text: string) => string;
   private matchColor: (text: string) => string;
   private currentMatchColor: (text: string) => string;
+  private gitStatusForSpan?: (span: SourceSpan | null) => GitLineStatus | null;
+  private gitAddedColor: (text: string) => string;
+  private gitModifiedColor: (text: string) => string;
+  private gitDeletedColor: (text: string) => string;
+  private gitMovedColor: (text: string) => string;
 
   // Search state
   private searchMode = false;
@@ -95,6 +128,7 @@ export class Pager implements Component {
     this.onReload = options.onReload;
     this.onSuspend = options.onSuspend;
     this.showLineNumbers = options.showLineNumbers ?? false;
+    this.gitStatusForSpan = options.gitStatusForSpan;
     this.wrapWidth = options.wrapWidth ?? 0;
     this.bgColor = options.bgColor ?? ((t) => t);
     this.fgColor = options.fgColor ?? ((t) => t);
@@ -105,6 +139,10 @@ export class Pager implements Component {
     this.lineNumberColor = options.lineNumberColor ?? ((t) => t);
     this.matchColor = options.matchColor ?? ((t) => t);
     this.currentMatchColor = options.currentMatchColor ?? ((t) => t);
+    this.gitAddedColor = options.gitAddedColor ?? ((t) => t);
+    this.gitModifiedColor = options.gitModifiedColor ?? ((t) => t);
+    this.gitDeletedColor = options.gitDeletedColor ?? ((t) => t);
+    this.gitMovedColor = options.gitMovedColor ?? ((t) => t);
     this.tocEntries = options.tocEntries ?? [];
   }
 
@@ -125,6 +163,13 @@ export class Pager implements Component {
     this.tocIndex = Math.min(this.tocIndex, Math.max(0, tocEntries.length - 1));
   }
 
+  setGitStatusResolver(
+    resolver: ((span: SourceSpan | null) => GitLineStatus | null) | undefined,
+  ): void {
+    this.gitStatusForSpan = resolver;
+    this.invalidate();
+  }
+
   setViewportHeight(height: number): void {
     this.viewportHeight = height;
   }
@@ -143,6 +188,10 @@ export class Pager implements Component {
     lineNumberColor?: (text: string) => string;
     matchColor?: (text: string) => string;
     currentMatchColor?: (text: string) => string;
+    gitAddedColor?: (text: string) => string;
+    gitModifiedColor?: (text: string) => string;
+    gitDeletedColor?: (text: string) => string;
+    gitMovedColor?: (text: string) => string;
   }): void {
     if (colors.bgColor) this.bgColor = colors.bgColor;
     if (colors.fgColor) this.fgColor = colors.fgColor;
@@ -154,11 +203,17 @@ export class Pager implements Component {
     if (colors.matchColor) this.matchColor = colors.matchColor;
     if (colors.currentMatchColor)
       this.currentMatchColor = colors.currentMatchColor;
+    if (colors.gitAddedColor) this.gitAddedColor = colors.gitAddedColor;
+    if (colors.gitModifiedColor)
+      this.gitModifiedColor = colors.gitModifiedColor;
+    if (colors.gitDeletedColor) this.gitDeletedColor = colors.gitDeletedColor;
+    if (colors.gitMovedColor) this.gitMovedColor = colors.gitMovedColor;
   }
 
   invalidate(): void {
     this.content.invalidate();
     this.cachedLines = [];
+    this.cachedSourceSpans = [];
     this.cachedWidth = 0;
   }
 
@@ -185,9 +240,9 @@ export class Pager implements Component {
   }
 
   private getContentWidth(width: number): number {
-    const availableWidth = this.showLineNumbers
-      ? width - LINE_NUMBER_WIDTH
-      : width;
+    const gutterWidth = this.isGitGutterVisible() ? GIT_GUTTER_WIDTH : 0;
+    const availableWidth =
+      width - gutterWidth - (this.showLineNumbers ? LINE_NUMBER_WIDTH : 0);
     // Use wrapWidth if set and smaller than available width
     if (this.wrapWidth > 0 && this.wrapWidth < availableWidth) {
       return this.wrapWidth;
@@ -200,7 +255,14 @@ export class Pager implements Component {
 
     // Re-render content if width changed
     if (this.cachedWidth !== contentWidth || this.cachedLines.length === 0) {
-      this.cachedLines = this.content.render(contentWidth);
+      if (isSourceMappedComponent(this.content)) {
+        const result = this.content.renderWithSourceMap(contentWidth);
+        this.cachedLines = result.lines;
+        this.cachedSourceSpans = result.sourceSpans;
+      } else {
+        this.cachedLines = this.content.render(contentWidth);
+        this.cachedSourceSpans = new Array(this.cachedLines.length).fill(null);
+      }
       this.cachedWidth = contentWidth;
     }
 
@@ -220,11 +282,11 @@ export class Pager implements Component {
     const visible: string[] = [];
     for (let i = 0; i < sliced.length; i++) {
       const lineNum = start + i + 1; // 1-based line numbers
+      const lineIndex = start + i;
       let line = sliced[i] ?? "";
 
       // Highlight search matches within this line
       if (this.searchMatches.length > 0 && this.searchQuery) {
-        const lineIndex = start + i;
         if (this.searchMatches.includes(lineIndex)) {
           const isCurrent =
             this.searchMatches[this.currentMatchIndex] === lineIndex;
@@ -232,9 +294,13 @@ export class Pager implements Component {
         }
       }
 
-      const rendered = this.showLineNumbers
+      const gutter = this.isGitGutterVisible()
+        ? this.renderGitGutter(this.cachedSourceSpans[lineIndex] ?? null)
+        : "";
+      const numbered = this.showLineNumbers
         ? `${this.lineNumberColor(lineNum.toString().padStart(4, " "))} ${line}`
         : line;
+      const rendered = `${gutter}${numbered}`;
 
       const pad = Math.max(0, width - visibleWidth(rendered));
       visible.push(
@@ -243,9 +309,13 @@ export class Pager implements Component {
     }
 
     // Pad content to fill its area (with background)
-    const emptyLine = this.showLineNumbers
-      ? `${this.lineNumberColor("    ")} ${this.bgColor(" ".repeat(contentWidth))}`
-      : this.bgColor(" ".repeat(width));
+    const emptyGutter = this.isGitGutterVisible()
+      ? this.renderGitGutter(null)
+      : "";
+    const emptyNumbers = this.showLineNumbers
+      ? `${this.lineNumberColor("    ")} `
+      : "";
+    const emptyLine = `${emptyGutter}${emptyNumbers}${this.bgColor(" ".repeat(contentWidth))}`;
     while (visible.length < contentHeight) {
       visible.push(emptyLine);
     }
@@ -277,6 +347,26 @@ export class Pager implements Component {
     }
 
     return visible;
+  }
+
+  private isGitGutterVisible(): boolean {
+    return this.gitStatusForSpan !== undefined;
+  }
+
+  private renderGitGutter(span: SourceSpan | null): string {
+    const status = this.gitStatusForSpan?.(span) ?? null;
+    switch (status) {
+      case "added":
+        return this.bgColor(this.gitAddedColor(GIT_GUTTER_GLYPH));
+      case "modified":
+        return this.bgColor(this.gitModifiedColor(GIT_GUTTER_GLYPH));
+      case "deleted":
+        return this.bgColor(this.gitDeletedColor(GIT_GUTTER_GLYPH));
+      case "moved":
+        return this.bgColor(this.gitMovedColor(GIT_GUTTER_GLYPH));
+      default:
+        return this.bgColor(" ");
+    }
   }
 
   private renderSearchInput(width: number): string {

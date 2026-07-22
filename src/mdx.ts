@@ -1,13 +1,43 @@
+import {
+  createPreparedMarkdown,
+  type PreparedMarkdown,
+  type SourceSpan,
+} from "./source-map.js";
+
 /**
  * Preprocess MDX content to make it renderable as Markdown.
  * Converts JSX components and JS expressions into fenced code blocks.
  */
 export function preprocessMdx(content: string): string {
-  const lines = content.split("\n");
+  return preprocessMdxWithSourceMap(createPreparedMarkdown(content)).content;
+}
+
+export function preprocessMdxWithSourceMap(
+  document: PreparedMarkdown,
+): PreparedMarkdown {
+  const lines = document.content.split(/\r?\n/);
   const result: string[] = [];
+  const lineMap: Array<SourceSpan | null> = [];
   let inJsxBlock = false;
-  let jsxBuffer: string[] = [];
+  let jsxBuffer: Array<{ line: string; index: number }> = [];
   let braceDepth = 0;
+
+  const push = (line: string, sourceIndex?: number) => {
+    result.push(line);
+    lineMap.push(
+      sourceIndex === undefined
+        ? null
+        : (document.lineMap[sourceIndex] ?? null),
+    );
+  };
+
+  const pushJsxBlock = () => {
+    push("```jsx");
+    for (const entry of jsxBuffer) {
+      push(entry.line, entry.index);
+    }
+    push("```");
+  };
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -17,7 +47,9 @@ export function preprocessMdx(content: string): string {
     // Skip import/export statements - convert to code block
     if (trimmed.startsWith("import ") || trimmed.startsWith("export ")) {
       // Collect consecutive import/export lines
-      const importExportLines: string[] = [line];
+      const importExportLines: Array<{ line: string; index: number }> = [
+        { line, index: i },
+      ];
       while (i + 1 < lines.length) {
         const nextLine = lines[i + 1];
         if (nextLine === undefined) break;
@@ -29,23 +61,25 @@ export function preprocessMdx(content: string): string {
         ) {
           i++;
           if (nextTrimmed !== "") {
-            importExportLines.push(nextLine);
+            importExportLines.push({ line: nextLine, index: i });
           }
         } else {
           break;
         }
       }
-      result.push("```jsx");
-      result.push(...importExportLines);
-      result.push("```");
-      result.push("");
+      push("```jsx");
+      for (const entry of importExportLines) {
+        push(entry.line, entry.index);
+      }
+      push("```");
+      push("");
       continue;
     }
 
     // Detect JSX block start (line starts with <Component)
     if (!inJsxBlock && /^<[A-Z]/.test(trimmed)) {
       inJsxBlock = true;
-      jsxBuffer = [line];
+      jsxBuffer = [{ line, index: i }];
       braceDepth = countBraces(line);
 
       // Check if self-closing on same line
@@ -58,9 +92,7 @@ export function preprocessMdx(content: string): string {
         if (tagMatch) {
           const tagName = tagMatch[1];
           if (trimmed.endsWith("/>") || trimmed.includes(`</${tagName}>`)) {
-            result.push("```jsx");
-            result.push(...jsxBuffer);
-            result.push("```");
+            pushJsxBlock();
             inJsxBlock = false;
             jsxBuffer = [];
             continue;
@@ -72,14 +104,12 @@ export function preprocessMdx(content: string): string {
 
     // Inside JSX block
     if (inJsxBlock) {
-      jsxBuffer.push(line);
+      jsxBuffer.push({ line, index: i });
       braceDepth += countBraces(line);
 
       // Check for closing tag
       if (/<\/[A-Z][a-zA-Z0-9]*>/.test(trimmed) && braceDepth <= 0) {
-        result.push("```jsx");
-        result.push(...jsxBuffer);
-        result.push("```");
+        pushJsxBlock();
         inJsxBlock = false;
         jsxBuffer = [];
       }
@@ -87,17 +117,15 @@ export function preprocessMdx(content: string): string {
     }
 
     // Regular line - pass through
-    result.push(line);
+    push(line, i);
   }
 
   // Flush any remaining JSX buffer
   if (jsxBuffer.length > 0) {
-    result.push("```jsx");
-    result.push(...jsxBuffer);
-    result.push("```");
+    pushJsxBlock();
   }
 
-  return result.join("\n");
+  return { content: result.join("\n"), lineMap };
 }
 
 function countBraces(line: string): number {

@@ -18,11 +18,13 @@ import { parseArgs, printCompletion, printHelp, printVersion } from "./cli.js";
 import { type ColorScheme, detectColorScheme } from "./color-scheme.js";
 import { getThemeName, loadConfig, saveDefaultConfig } from "./config.js";
 import { openInEditor } from "./editor.js";
+import { createGitStatusResolver, type GitStatusResolver } from "./git.js";
 import { createHighlightCodeFn, initSyntaxHighlighter } from "./highlighter.js";
 import { PMD_KEYBINDINGS } from "./keybindings.js";
-import { preprocessMdx } from "./mdx.js";
-import { preprocessMermaid } from "./mermaid.js";
+import { preprocessMdxWithSourceMap } from "./mdx.js";
+import { preprocessMermaidWithSourceMap } from "./mermaid.js";
 import { Pager, type TocEntry } from "./pager.js";
+import { createPreparedMarkdown } from "./source-map.js";
 import {
   buildDefaultTextStyle,
   buildMarkdownTheme,
@@ -209,16 +211,46 @@ async function buildContentComponent(
   content: string,
   markdownTheme: ReturnType<typeof buildMarkdownTheme>,
   defaultTextStyle: ReturnType<typeof buildDefaultTextStyle>,
-  maxMermaidWidth: number,
 ): Promise<Component> {
-  const preprocessed = await preprocessMermaid(content, maxMermaidWidth);
   return new Markdown(
-    preprocessed,
+    content,
     CONTENT_PADDING_X,
     1,
     markdownTheme,
     defaultTextStyle,
   );
+}
+
+interface Document {
+  component: Component;
+  tocEntries: TocEntry[];
+  gitStatusForSpan?: GitStatusResolver;
+}
+
+async function buildDocument(
+  content: string,
+  filePath: string | null,
+  markdownTheme: ReturnType<typeof buildMarkdownTheme>,
+  defaultTextStyle: ReturnType<typeof buildDefaultTextStyle>,
+  maxMermaidWidth: number,
+): Promise<Document> {
+  let prepared = createPreparedMarkdown(content);
+  if (filePath?.endsWith(".mdx")) {
+    prepared = preprocessMdxWithSourceMap(prepared);
+  }
+  prepared = await preprocessMermaidWithSourceMap(prepared, maxMermaidWidth);
+
+  return {
+    component: await buildContentComponent(
+      prepared.content,
+      markdownTheme,
+      defaultTextStyle,
+    ),
+    tocEntries: extractTocEntries(prepared.content),
+    gitStatusForSpan: filePath
+      ? createGitStatusResolver(filePath, content, prepared)
+      : undefined,
+  };
 }
 
 async function main(): Promise<void> {
@@ -286,7 +318,6 @@ async function main(): Promise<void> {
 
   if (mode === "viewer" && filePath) {
     content = fs.readFileSync(filePath, "utf8");
-    if (filePath.endsWith(".mdx")) content = preprocessMdx(content);
     filename = filePath;
   } else if (mode === "stdin") {
     content = await readStdin();
@@ -341,7 +372,6 @@ async function main(): Promise<void> {
   };
 
   const showLineNumbers = options.lineNumbers || config.showLineNumbers;
-
   // --- Color factories (rebuilt on theme change) ---
 
   const buildBrowserColors = () => ({
@@ -369,6 +399,10 @@ async function main(): Promise<void> {
     currentMatchColor: chalk.bold
       .bgHex(currentTheme.colors.searchCurrentMatch)
       .hex("#0a0a0a"),
+    gitAddedColor: chalk.hex(currentTheme.colors.gitAdded),
+    gitModifiedColor: chalk.hex(currentTheme.colors.gitModified),
+    gitDeletedColor: chalk.hex(currentTheme.colors.gitDeleted),
+    gitMovedColor: chalk.hex(currentTheme.colors.gitMoved),
   });
 
   const buildStatusBarColors = () => ({
@@ -410,16 +444,16 @@ async function main(): Promise<void> {
     if (activePager && mainSwitcher.getActive() === activePager) {
       if (activeFilePath) {
         try {
-          let newContent = fs.readFileSync(activeFilePath, "utf8");
-          if (activeFilePath.endsWith(".mdx"))
-            newContent = preprocessMdx(newContent);
-          const newComponent = await buildContentComponent(
+          const newContent = fs.readFileSync(activeFilePath, "utf8");
+          const document = await buildDocument(
             newContent,
+            activeFilePath,
             markdownTheme,
             defaultTextStyle,
             getMermaidMaxWidth(),
           );
-          activePager.setContent(newComponent, extractTocEntries(newContent));
+          activePager.setContent(document.component, document.tocEntries);
+          activePager.setGitStatusResolver(document.gitStatusForSpan);
         } catch {
           // File temporarily unavailable
         }
@@ -449,16 +483,15 @@ async function main(): Promise<void> {
   // fromBrowser: true  -> q goes back to browser
   // fromBrowser: false -> q quits the process
   function buildPager(
-    pagerContent: Component,
+    document: Document,
     pagerFilePath: string | null,
     pagerFilename: string,
     fromBrowser: boolean,
-    tocEntries: TocEntry[],
   ): { pager: Pager; statusBar: StatusBar } {
     let pager: Pager;
 
     pager = new Pager({
-      content: pagerContent,
+      content: document.component,
       onExit: () => {
         activeFileWatcher?.stop();
         activeFileWatcher = null;
@@ -478,16 +511,16 @@ async function main(): Promise<void> {
         if (!pagerFilePath) return;
         void (async () => {
           try {
-            let newContent = fs.readFileSync(pagerFilePath, "utf8");
-            if (pagerFilePath.endsWith(".mdx"))
-              newContent = preprocessMdx(newContent);
-            const newComponent = await buildContentComponent(
+            const newContent = fs.readFileSync(pagerFilePath, "utf8");
+            const nextDocument = await buildDocument(
               newContent,
+              pagerFilePath,
               markdownTheme,
               defaultTextStyle,
               getMermaidMaxWidth(),
             );
-            pager.setContent(newComponent, extractTocEntries(newContent));
+            pager.setContent(nextDocument.component, nextDocument.tocEntries);
+            pager.setGitStatusResolver(nextDocument.gitStatusForSpan);
             pager.setFileChanged(false);
             tui.requestRender(true);
           } catch {
@@ -502,16 +535,16 @@ async function main(): Promise<void> {
         openInEditor(pagerFilePath, lineNumber);
         void (async () => {
           try {
-            let newContent = fs.readFileSync(pagerFilePath, "utf8");
-            if (pagerFilePath.endsWith(".mdx"))
-              newContent = preprocessMdx(newContent);
-            const newComponent = await buildContentComponent(
+            const newContent = fs.readFileSync(pagerFilePath, "utf8");
+            const nextDocument = await buildDocument(
               newContent,
+              pagerFilePath,
               markdownTheme,
               defaultTextStyle,
               getMermaidMaxWidth(),
             );
-            pager.setContent(newComponent, extractTocEntries(newContent));
+            pager.setContent(nextDocument.component, nextDocument.tocEntries);
+            pager.setGitStatusResolver(nextDocument.gitStatusForSpan);
           } catch {
             // Ignore read errors after edit
           }
@@ -525,8 +558,9 @@ async function main(): Promise<void> {
         process.kill(process.pid, "SIGTSTP");
       },
       showLineNumbers,
+      gitStatusForSpan: document.gitStatusForSpan,
       wrapWidth: options.width,
-      tocEntries,
+      tocEntries: document.tocEntries,
       ...buildPagerColors(),
     });
 
@@ -551,21 +585,18 @@ async function main(): Promise<void> {
         return; // Can't read file — stay in browser
       }
 
-      if (entry.absolutePath.endsWith(".mdx"))
-        fileContent = preprocessMdx(fileContent);
-
-      const contentComponent = await buildContentComponent(
+      const document = await buildDocument(
         fileContent,
+        entry.absolutePath,
         markdownTheme,
         defaultTextStyle,
         getMermaidMaxWidth(),
       );
       const { pager, statusBar } = buildPager(
-        contentComponent,
+        document,
         entry.absolutePath,
         entry.relativePath,
         true,
-        extractTocEntries(fileContent),
       );
 
       activePager = pager;
@@ -606,18 +637,18 @@ async function main(): Promise<void> {
     browser.setViewportHeight(getMainViewportHeight());
   } else {
     // viewer or stdin
-    const contentComponent = await buildContentComponent(
+    const document = await buildDocument(
       content,
+      filePath,
       markdownTheme,
       defaultTextStyle,
       getMermaidMaxWidth(),
     );
     const { pager, statusBar } = buildPager(
-      contentComponent,
+      document,
       filePath,
       filename,
       false,
-      extractTocEntries(content),
     );
 
     activePager = pager;

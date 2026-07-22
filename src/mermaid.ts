@@ -1,10 +1,9 @@
+import {
+  createPreparedMarkdown,
+  type PreparedMarkdown,
+  type SourceSpan,
+} from "./source-map.js";
 import { renderMermaidAscii } from "./vendor/beautiful-mermaid.js";
-
-/**
- * Match fenced mermaid code blocks (``` mermaid ... ```).
- * Handles optional whitespace after "mermaid" and before the closing fence.
- */
-const MERMAID_BLOCK_RE = /^```mermaid\s*\n([\s\S]*?)^```\s*$/gm;
 
 function rewriteStateDiagramStartEnd(diagram: string): string {
   const lines = diagram.split("\n");
@@ -69,14 +68,74 @@ function rewriteStateDiagramStartEnd(diagram: string): string {
  */
 export async function preprocessMermaid(
   content: string,
-  _maxWidth: number,
+  maxWidth: number,
 ): Promise<string> {
-  return content.replace(MERMAID_BLOCK_RE, (match, diagram: string) => {
+  const document = await preprocessMermaidWithSourceMap(
+    createPreparedMarkdown(content),
+    maxWidth,
+  );
+  return document.content;
+}
+
+export async function preprocessMermaidWithSourceMap(
+  document: PreparedMarkdown,
+  _maxWidth: number,
+): Promise<PreparedMarkdown> {
+  const lines = document.content.split(/\r?\n/);
+  const result: string[] = [];
+  const lineMap: Array<SourceSpan | null> = [];
+  let transformed = false;
+
+  const push = (line: string, sourceIndex?: number) => {
+    result.push(line);
+    lineMap.push(
+      sourceIndex === undefined
+        ? null
+        : (document.lineMap[sourceIndex] ?? null),
+    );
+  };
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    if (line === undefined || !/^```mermaid\s*$/.test(line)) {
+      if (line !== undefined) push(line, index);
+      continue;
+    }
+
+    let closingIndex = -1;
+    for (let candidate = index + 1; candidate < lines.length; candidate++) {
+      if (/^```\s*$/.test(lines[candidate] ?? "")) {
+        closingIndex = candidate;
+        break;
+      }
+    }
+
+    if (closingIndex === -1) {
+      push(line, index);
+      continue;
+    }
+
+    const diagram = lines.slice(index + 1, closingIndex).join("\n");
     try {
       const rewritten = rewriteStateDiagramStartEnd(diagram.trimEnd());
-      return renderMermaidAscii(rewritten);
+      const rendered = renderMermaidAscii(rewritten);
+      for (const renderedLine of rendered.split("\n")) {
+        push(renderedLine);
+      }
+      transformed = true;
     } catch {
-      return match;
+      for (
+        let sourceIndex = index;
+        sourceIndex <= closingIndex;
+        sourceIndex++
+      ) {
+        const sourceLine = lines[sourceIndex];
+        if (sourceLine !== undefined) push(sourceLine, sourceIndex);
+      }
     }
-  });
+
+    index = closingIndex;
+  }
+
+  return transformed ? { content: result.join("\n"), lineMap } : document;
 }
