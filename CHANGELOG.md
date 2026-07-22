@@ -1,5 +1,15 @@
 # preview-markdown
 
+## 0.10.0
+
+### Minor Changes
+
+- 0f37f55: Add an automatic Git status gutter to Markdown previews.
+
+### Patch Changes
+
+- bf07d9f: Allow the `$schema` key in pmd configuration files.
+
 ## 0.9.0
 
 ### Minor Changes
