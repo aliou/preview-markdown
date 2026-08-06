@@ -6,10 +6,12 @@ import {
   KeybindingsManager,
   Markdown,
   ProcessTerminal,
+  ScrollView,
   Spacer,
   setKeybindings,
-  TUI,
   TUI_KEYBINDINGS,
+  TuiAltScreen,
+  VStack,
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import chalk from "chalk";
@@ -30,37 +32,28 @@ import {
   buildMarkdownTheme,
   resolveTheme,
 } from "./theme.js";
+import { ViewportController } from "./viewport.js";
 import { watchFile } from "./watcher.js";
-
-// Alternate screen buffer sequences
-const ENTER_ALT_SCREEN = "\x1b[?1049h";
-const EXIT_ALT_SCREEN = "\x1b[?1049l";
-
-// Mode 2031: color scheme change notifications
-const ENABLE_COLOR_SCHEME_REPORTING = "\x1b[?2031h";
-const DISABLE_COLOR_SCHEME_REPORTING = "\x1b[?2031l";
-const COLOR_SCHEME_DARK = "\x1b[?997;1n";
-const COLOR_SCHEME_LIGHT = "\x1b[?997;2n";
 
 // Markdown content padding for a balanced reading layout
 const CONTENT_PADDING_X = 2;
 
 setKeybindings(
-  new KeybindingsManager({
-    ...TUI_KEYBINDINGS,
-    ...PMD_KEYBINDINGS,
-  }),
+  new KeybindingsManager(
+    {
+      ...TUI_KEYBINDINGS,
+      ...PMD_KEYBINDINGS,
+    },
+    {
+      "tui.altScreen.pageUp": [],
+      "tui.altScreen.pageDown": [],
+      "tui.altScreen.previousPrompt": [],
+      "tui.altScreen.nextPrompt": [],
+      "tui.altScreen.top": [],
+      "tui.altScreen.bottom": [],
+    },
+  ),
 );
-
-function enterAlternateScreen(): void {
-  process.stdout.write(ENTER_ALT_SCREEN);
-  process.stdout.write(ENABLE_COLOR_SCHEME_REPORTING);
-}
-
-function exitAlternateScreen(): void {
-  process.stdout.write(DISABLE_COLOR_SCHEME_REPORTING);
-  process.stdout.write(EXIT_ALT_SCREEN);
-}
 
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
@@ -154,6 +147,7 @@ class StatusBar implements Component {
   render(width: number): string[] {
     const scrollInfo = this.pager.getScrollInfo();
     const searchInfo = this.pager.getSearchInfo();
+    const lines = this.pager.getFooterLines(width);
 
     const percentStr = ` ${scrollInfo.percent}% `;
     const searchStr = searchInfo
@@ -203,7 +197,8 @@ class StatusBar implements Component {
     const padding = Math.max(0, width - leftWidth - rightWidth);
     const line = left + " ".repeat(padding) + right;
 
-    return [this.bgColor(this.fgColor(line))];
+    lines.push(this.bgColor(this.fgColor(line)));
+    return lines;
   }
 }
 
@@ -218,6 +213,7 @@ async function buildContentComponent(
     1,
     markdownTheme,
     defaultTextStyle,
+    { renderLatex: false },
   );
 }
 
@@ -351,17 +347,38 @@ async function main(): Promise<void> {
 
   // Create terminal and TUI
   const terminal = new ProcessTerminal();
-  const tui = new TUI(terminal);
+  const tui = new TuiAltScreen(terminal, undefined, undefined, { mouse: true });
 
   // Two switchers: one for the main content area, one for the status bar.
   // Swapping active components in each switcher is how we transition between
   // browser mode and viewer mode without restarting the TUI.
   const mainSwitcher = new Switcher();
   const statusSwitcher = new Switcher();
+  const mainScroll = new ScrollView(mainSwitcher, {
+    primary: true,
+    follow: "none",
+    overscroll: "contain",
+    scrollbar: "auto",
+  });
+  const viewport = new ViewportController(mainScroll);
+  const root = new VStack([
+    {
+      component: mainScroll,
+      basis: 0,
+      grow: 1,
+      minSize: 1,
+    },
+    {
+      component: statusSwitcher,
+      basis: "auto",
+      shrink: 0,
+      minSize: 0,
+    },
+  ]);
 
-  tui.addChild(mainSwitcher);
-  tui.addChild(statusSwitcher);
+  tui.setLayoutRoot(root);
   tui.setFocus(mainSwitcher);
+  tui.setTerminalColorSchemeNotifications(true);
 
   const getMermaidMaxWidth = (): number => {
     const targetWidth =
@@ -468,15 +485,8 @@ async function main(): Promise<void> {
     tui.requestRender(true);
   };
 
-  tui.addInputListener((data) => {
-    if (data.includes(COLOR_SCHEME_DARK)) {
-      void handleColorSchemeChange("dark");
-      return { consume: true };
-    }
-    if (data.includes(COLOR_SCHEME_LIGHT)) {
-      void handleColorSchemeChange("light");
-      return { consume: true };
-    }
+  tui.onTerminalColorSchemeChange((scheme) => {
+    void handleColorSchemeChange(scheme);
   });
 
   // --- Pager creation helper ---
@@ -492,18 +502,20 @@ async function main(): Promise<void> {
 
     pager = new Pager({
       content: document.component,
+      viewport,
       onExit: () => {
         activeFileWatcher?.stop();
         activeFileWatcher = null;
 
         if (fromBrowser && browser) {
           // Return to directory browser
+          viewport.setFallbackViewportHeight(terminal.rows);
           mainSwitcher.setActive(browser);
           statusSwitcher.setActive(emptyStatus);
+          viewport.reset();
           tui.requestRender(true);
         } else {
-          tui.stop();
-          exitAlternateScreen();
+          tui.stop({ preserveScreen: true });
           process.exit(0);
         }
       },
@@ -530,8 +542,7 @@ async function main(): Promise<void> {
       },
       onEdit: (lineNumber) => {
         if (!pagerFilePath) return;
-        exitAlternateScreen();
-        tui.stop();
+        tui.stop({ preserveScreen: true });
         openInEditor(pagerFilePath, lineNumber);
         void (async () => {
           try {
@@ -553,8 +564,7 @@ async function main(): Promise<void> {
         })();
       },
       onSuspend: () => {
-        exitAlternateScreen();
-        tui.stop();
+        tui.stop({ preserveScreen: true });
         process.kill(process.pid, "SIGTSTP");
       },
       showLineNumbers,
@@ -609,9 +619,10 @@ async function main(): Promise<void> {
       });
       activeFileWatcher.start();
 
+      viewport.setFallbackViewportHeight(Math.max(1, terminal.rows - 1));
       mainSwitcher.setActive(pager);
       statusSwitcher.setActive(statusBar);
-      pager.setViewportHeight(getMainViewportHeight());
+      viewport.reset();
       tui.requestRender(true);
     })();
   }
@@ -619,14 +630,15 @@ async function main(): Promise<void> {
   // --- Initial mode setup ---
 
   if (mode === "browser") {
+    viewport.setFallbackViewportHeight(terminal.rows);
     const entries = scanDirectory(baseDir, options.depth);
     browser = new Browser({
       entries,
+      viewport,
       baseDir,
       onOpen: openFileFromBrowser,
       onQuit: () => {
-        tui.stop();
-        exitAlternateScreen();
+        tui.stop({ preserveScreen: true });
         process.exit(0);
       },
       ...buildBrowserColors(),
@@ -634,8 +646,9 @@ async function main(): Promise<void> {
 
     mainSwitcher.setActive(browser);
     statusSwitcher.setActive(emptyStatus);
-    browser.setViewportHeight(getMainViewportHeight());
+    viewport.reset();
   } else {
+    viewport.setFallbackViewportHeight(Math.max(1, terminal.rows - 1));
     // viewer or stdin
     const document = await buildDocument(
       content,
@@ -664,41 +677,8 @@ async function main(): Promise<void> {
 
     mainSwitcher.setActive(pager);
     statusSwitcher.setActive(statusBar);
-    pager.setViewportHeight(getMainViewportHeight());
+    viewport.reset();
   }
-
-  // --- TUI lifecycle wrappers ---
-
-  function getStatusLineCount(): number {
-    return statusSwitcher.getActive() === emptyStatus ? 0 : 1;
-  }
-
-  function getMainViewportHeight(): number {
-    return Math.max(0, terminal.rows - getStatusLineCount());
-  }
-
-  // Sets viewport height on whichever component is currently the main content.
-  function setActiveViewportHeight(h: number): void {
-    const active = mainSwitcher.getActive();
-    if (active instanceof Browser) {
-      active.setViewportHeight(h);
-    } else if (active instanceof Pager) {
-      active.setViewportHeight(h);
-    }
-  }
-
-  const originalStart = tui.start.bind(tui);
-  tui.start = () => {
-    enterAlternateScreen();
-    originalStart();
-    setActiveViewportHeight(getMainViewportHeight());
-  };
-
-  const originalRequestRender = tui.requestRender.bind(tui);
-  tui.requestRender = (force?: boolean) => {
-    setActiveViewportHeight(getMainViewportHeight());
-    originalRequestRender(force);
-  };
 
   // Resume after Ctrl-Z suspend
   process.on("SIGCONT", () => {
@@ -706,6 +686,11 @@ async function main(): Promise<void> {
     if (active instanceof Pager) active.invalidate();
     tui.start();
     tui.requestRender(true);
+  });
+
+  process.stdout.on("resize", () => {
+    const timer = setTimeout(() => tui.requestRender(true), 0);
+    timer.unref();
   });
 
   // Start file watcher for initial viewer/stdin modes

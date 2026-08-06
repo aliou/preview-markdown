@@ -1,10 +1,10 @@
 diff --git a/dist/components/markdown.d.ts b/dist/components/markdown.d.ts
-index 88f5ca47e02f88eecb7589519cfe4cac6a3c0aee..9bc5ffa9eeb3163fbb39f0d73a1402beb03e95a0 100644
+index acc312382885b1c813d540fafa1df3414545690b..1e2051ae2f24f6a4c899fcbe4d6c0b552aac3fc3 100644
 --- a/dist/components/markdown.d.ts
 +++ b/dist/components/markdown.d.ts
-@@ -46,6 +46,14 @@ export interface MarkdownOptions {
-     /** Preserve source backslash escapes instead of normalizing escaped punctuation. */
-     preserveBackslashEscapes?: boolean;
+@@ -50,6 +50,14 @@ export interface MarkdownOptions {
+     /** Render supported LaTeX math expressions as Unicode text (default: true). */
+     renderLatex?: boolean;
  }
 +export interface MarkdownSourceSpan {
 +    startLine: number;
@@ -17,7 +17,7 @@ index 88f5ca47e02f88eecb7589519cfe4cac6a3c0aee..9bc5ffa9eeb3163fbb39f0d73a1402be
  export declare class Markdown implements Component {
      private text;
      private paddingX;
-@@ -57,10 +65,12 @@ export declare class Markdown implements Component {
+@@ -61,10 +69,12 @@ export declare class Markdown implements Component {
      private cachedText?;
      private cachedWidth?;
      private cachedLines?;
@@ -30,21 +30,23 @@ index 88f5ca47e02f88eecb7589519cfe4cac6a3c0aee..9bc5ffa9eeb3163fbb39f0d73a1402be
      /**
       * Apply default text style to a string.
       * This is the base styling applied to all text content.
-@@ -71,6 +81,9 @@ export declare class Markdown implements Component {
+@@ -75,6 +85,11 @@ export declare class Markdown implements Component {
      private getDefaultStylePrefix;
      private getStylePrefix;
      private getDefaultInlineStyleContext;
 +    private getSourceSpan;
 +    private getSourceLineAdvance;
 +    private getTokenLineSourceSpan;
++    private getEffectiveTokenType;
++    private renderCodeBlock;
      private renderToken;
      private renderInlineTokens;
      private getOrderedListMarker;
 diff --git a/dist/components/markdown.js b/dist/components/markdown.js
-index 0524308e12e2752578abad231f684ffa22136119..b0268f839f69778586748ca63aaf5c4e26cd372d 100644
+index 8f0ef3bef6645d790932cbb9eaf4c2fdb2849b7c..14366271f7af3bd34bfa1655d94ca7a3685b3b21 100644
 --- a/dist/components/markdown.js
 +++ b/dist/components/markdown.js
-@@ -55,6 +55,7 @@ export class Markdown {
+@@ -159,6 +159,7 @@ export class Markdown {
      cachedText;
      cachedWidth;
      cachedLines;
@@ -52,7 +54,7 @@ index 0524308e12e2752578abad231f684ffa22136119..b0268f839f69778586748ca63aaf5c4e
      constructor(text, paddingX, paddingY, theme, defaultTextStyle, options) {
          this.text = text;
          this.paddingX = paddingX;
-@@ -71,11 +72,18 @@ export class Markdown {
+@@ -175,11 +176,18 @@ export class Markdown {
          this.cachedText = undefined;
          this.cachedWidth = undefined;
          this.cachedLines = undefined;
@@ -73,7 +75,7 @@ index 0524308e12e2752578abad231f684ffa22136119..b0268f839f69778586748ca63aaf5c4e
          }
          // Calculate available width for content (subtract horizontal padding)
          const contentWidth = Math.max(1, width - this.paddingX * 2);
-@@ -86,7 +94,8 @@ export class Markdown {
+@@ -191,7 +199,8 @@ export class Markdown {
              this.cachedText = this.text;
              this.cachedWidth = width;
              this.cachedLines = result;
@@ -82,8 +84,8 @@ index 0524308e12e2752578abad231f684ffa22136119..b0268f839f69778586748ca63aaf5c4e
 +            return { lines: result, sourceSpans: [] };
          }
          // Replace tabs with 3 spaces for consistent rendering
-         const normalizedText = this.text.replace(/\t/g, "   ");
-@@ -95,23 +104,36 @@ export class Markdown {
+         const normalizedText = text.replace(/\t/g, "   ");
+@@ -200,23 +209,36 @@ export class Markdown {
          trimPartialClosingFences(tokens);
          // Convert tokens to styled terminal output
          const renderedLines = [];
@@ -128,7 +130,7 @@ index 0524308e12e2752578abad231f684ffa22136119..b0268f839f69778586748ca63aaf5c4e
                  }
              }
          }
-@@ -120,12 +142,14 @@ export class Markdown {
+@@ -225,12 +247,14 @@ export class Markdown {
          const rightMargin = " ".repeat(this.paddingX);
          const bgFn = this.defaultTextStyle?.bgColor;
          const contentLines = [];
@@ -147,7 +149,7 @@ index 0524308e12e2752578abad231f684ffa22136119..b0268f839f69778586748ca63aaf5c4e
              if (bgFn) {
                  contentLines.push(applyBackgroundToLine(lineWithMargins, width, bgFn));
              }
-@@ -135,6 +159,7 @@ export class Markdown {
+@@ -240,6 +264,7 @@ export class Markdown {
                  const paddingNeeded = Math.max(0, width - visibleLen);
                  contentLines.push(lineWithMargins + " ".repeat(paddingNeeded));
              }
@@ -155,7 +157,7 @@ index 0524308e12e2752578abad231f684ffa22136119..b0268f839f69778586748ca63aaf5c4e
          }
          // Add top/bottom padding (empty lines)
          const emptyLine = " ".repeat(width);
-@@ -144,12 +169,42 @@ export class Markdown {
+@@ -249,12 +274,42 @@ export class Markdown {
              emptyLines.push(line);
          }
          // Combine top padding, content, and bottom padding
@@ -200,7 +202,7 @@ index 0524308e12e2752578abad231f684ffa22136119..b0268f839f69778586748ca63aaf5c4e
      }
      /**
       * Apply default text style to a string.
-@@ -221,7 +276,67 @@ export class Markdown {
+@@ -326,7 +381,67 @@ export class Markdown {
              stylePrefix: this.getDefaultStylePrefix(),
          };
      }
@@ -269,9 +271,9 @@ index 0524308e12e2752578abad231f684ffa22136119..b0268f839f69778586748ca63aaf5c4e
          const lines = [];
          switch (token.type) {
              case "heading": {
-@@ -262,25 +377,8 @@ export class Markdown {
-                 lines.push(this.renderInlineTokens([token], styleContext));
+@@ -380,25 +495,8 @@ export class Markdown {
                  break;
+             }
              case "code": {
 -                const indent = this.theme.codeBlockIndent ?? "  ";
 -                lines.push(this.theme.codeBlockBorder(`\`\`\`${token.lang || ""}`));
@@ -297,7 +299,16 @@ index 0524308e12e2752578abad231f684ffa22136119..b0268f839f69778586748ca63aaf5c4e
                  break;
              }
              case "list": {
-@@ -343,14 +441,33 @@ export class Markdown {
+@@ -437,7 +535,7 @@ export class Markdown {
+                 for (let i = 0; i < quoteTokens.length; i++) {
+                     const quoteToken = quoteTokens[i];
+                     const nextQuoteToken = quoteTokens[i + 1];
+-                    renderedQuoteLines.push(...this.renderToken(quoteToken, quoteContentWidth, nextQuoteToken?.type, quoteInlineStyleContext));
++                    renderedQuoteLines.push(...this.renderToken(quoteToken, quoteContentWidth, this.getEffectiveTokenType(nextQuoteToken), quoteInlineStyleContext));
+                 }
+                 // Avoid rendering an extra empty quote line before the outer blockquote spacing.
+                 while (renderedQuoteLines.length > 0 && renderedQuoteLines[renderedQuoteLines.length - 1] === "") {
+@@ -461,14 +559,33 @@ export class Markdown {
                      lines.push(""); // Add spacing after horizontal rules (unless space token follows)
                  }
                  break;

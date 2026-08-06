@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Component } from "@earendil-works/pi-tui";
 import { pmdMatches } from "./keybindings.js";
+import type { ViewportController } from "./viewport.js";
 
 const MD_EXTENSIONS = new Set([".md", ".markdown", ".mdx"]);
 
@@ -167,6 +168,7 @@ export interface BrowserColors {
 
 export interface BrowserOptions extends BrowserColors {
   entries: Entry[];
+  viewport?: ViewportController;
   baseDir: string;
   onOpen: (entry: Entry) => void;
   onQuit: () => void;
@@ -174,6 +176,7 @@ export interface BrowserOptions extends BrowserColors {
 
 export class Browser implements Component {
   private entries: Entry[];
+  private viewport?: ViewportController;
   private baseDir: string;
   private filtered: Entry[];
   private cursor = 0;
@@ -197,6 +200,7 @@ export class Browser implements Component {
 
   constructor(options: BrowserOptions) {
     this.entries = options.entries;
+    this.viewport = options.viewport;
     this.baseDir = options.baseDir;
     this.filtered = [...options.entries];
     this.onOpen = options.onOpen;
@@ -217,6 +221,10 @@ export class Browser implements Component {
     this.viewportHeight = height;
   }
 
+  private getViewportHeight(): number {
+    return this.viewport?.viewportHeight ?? this.viewportHeight;
+  }
+
   updateColors(colors: BrowserColors): void {
     if (colors.bgColor !== undefined) this.bgColor = colors.bgColor;
     if (colors.fgColor !== undefined) this.fgColor = colors.fgColor;
@@ -234,7 +242,7 @@ export class Browser implements Component {
   // are reserved. When help overlay is shown it takes the full viewport.
   private getListHeight(): number {
     if (this.showingHelp) return 0;
-    return Math.max(0, this.viewportHeight - HEADER_HEIGHT - 1);
+    return Math.max(0, this.getViewportHeight() - HEADER_HEIGHT - 1);
   }
 
   // How many 3-line items fit in the current list area.
@@ -253,6 +261,7 @@ export class Browser implements Component {
     }
     this.cursor = 0;
     this.scrollOffset = 0;
+    this.viewport?.reset();
   }
 
   private applySort(): void {
@@ -276,6 +285,17 @@ export class Browser implements Component {
   }
 
   private ensureCursorVisible(): void {
+    if (this.viewport) {
+      const firstLine = HEADER_HEIGHT + this.cursor * ITEM_HEIGHT;
+      this.viewport.ensureRangeVisible(
+        firstLine,
+        firstLine + ITEM_HEIGHT - 1,
+        HEADER_HEIGHT,
+        1,
+      );
+      return;
+    }
+
     const visible = this.getVisibleItemCount();
     if (visible <= 0) return;
     if (this.cursor < this.scrollOffset) {
@@ -405,6 +425,12 @@ export class Browser implements Component {
     const bg = this.helpBgColor;
     const fg = this.helpFgColor;
     const emptyLine = bg(" ".repeat(width));
+    const scrollTop = this.viewport?.scrollTop ?? 0;
+    const viewportHeight = this.getViewportHeight();
+
+    while (lines.length < scrollTop) {
+      lines.push(emptyLine);
+    }
 
     // Two blank lines at the top as padding.
     lines.push(emptyLine);
@@ -416,7 +442,7 @@ export class Browser implements Component {
     }
 
     // Fill remaining viewport.
-    while (lines.length < this.viewportHeight) {
+    while (lines.length < scrollTop + viewportHeight) {
       lines.push(emptyLine);
     }
 
@@ -425,7 +451,9 @@ export class Browser implements Component {
 
   render(width: number): string[] {
     if (this.showingHelp) {
-      return this.renderHelpOverlay(width);
+      const lines = this.renderHelpOverlay(width);
+      this.viewport?.setContentLineCount(lines.length);
+      return lines;
     }
 
     const listHeight = this.getListHeight();
@@ -450,8 +478,10 @@ export class Browser implements Component {
       }
     } else {
       this.ensureCursorVisible();
-      const start = this.scrollOffset;
-      const end = Math.min(start + visibleCount, this.filtered.length);
+      const start = this.viewport ? 0 : this.scrollOffset;
+      const end = this.viewport
+        ? this.filtered.length
+        : Math.min(start + visibleCount, this.filtered.length);
 
       for (let i = start; i < end; i++) {
         const entry = this.filtered[i];
@@ -460,17 +490,39 @@ export class Browser implements Component {
       }
 
       // Pad remaining list area.
-      while (lines.length < HEADER_HEIGHT + listHeight) {
+      const minimumHeight = this.viewport
+        ? this.viewport.viewportHeight
+        : HEADER_HEIGHT + listHeight;
+      while (lines.length < minimumHeight) {
         lines.push(emptyLine);
       }
     }
 
+    const footerLine = this.filterMode
+      ? this.renderFilterInput(width)
+      : this.renderMiniHelp(width);
+
     // Bottom line: filter input or mini help.
-    if (this.filterMode) {
-      lines.push(this.renderFilterInput(width));
-    } else {
-      lines.push(this.renderMiniHelp(width));
+    lines.push(footerLine);
+
+    if (this.viewport) {
+      const scrollTop = this.viewport.scrollTop;
+      const viewportHeight = this.viewport.viewportHeight;
+      const targetHeight = Math.max(lines.length, scrollTop + viewportHeight);
+      while (lines.length < targetHeight) {
+        lines.push(emptyLine);
+      }
+
+      const headerLines = this.renderHeader(width);
+      for (let i = 0; i < headerLines.length; i++) {
+        lines[scrollTop + i] = headerLines[i] ?? emptyLine;
+      }
+      if (viewportHeight > 0) {
+        lines[scrollTop + viewportHeight - 1] = footerLine;
+      }
     }
+
+    this.viewport?.setContentLineCount(lines.length);
 
     return lines;
   }

@@ -1,14 +1,14 @@
 import type { Component } from "@earendil-works/pi-tui";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { sliceByColumn, visibleWidth } from "@earendil-works/pi-tui";
 import {
   extractSegments,
-  sliceByColumn,
   sliceWithWidth,
 } from "@earendil-works/pi-tui/dist/utils.js";
 import type { GitLineStatus } from "./git.js";
 import { wrapUrlsHyperlinks } from "./hyperlink.js";
 import { pmdMatches } from "./keybindings.js";
 import type { SourceSpan } from "./source-map.js";
+import type { ViewportController } from "./viewport.js";
 
 // Strip ANSI escape codes for text searching
 const ANSI_REGEX = /\x1b\[[0-9;]*m/g;
@@ -60,6 +60,7 @@ function isSourceMappedComponent(
 
 export interface PagerOptions {
   content: Component;
+  viewport?: ViewportController;
   onExit: () => void;
   onEdit?: (lineNumber: number) => void;
   onReload?: () => void;
@@ -85,6 +86,7 @@ export interface PagerOptions {
 
 export class Pager implements Component {
   private content: Component;
+  private viewport?: ViewportController;
   private onExit: () => void;
   private onEdit?: (lineNumber: number) => void;
   private onReload?: () => void;
@@ -124,6 +126,7 @@ export class Pager implements Component {
 
   constructor(options: PagerOptions) {
     this.content = options.content;
+    this.viewport = options.viewport;
     this.onExit = options.onExit;
     this.onEdit = options.onEdit;
     this.onReload = options.onReload;
@@ -218,26 +221,8 @@ export class Pager implements Component {
     this.cachedWidth = 0;
   }
 
-  private getHelpHeight(): number {
-    return 0;
-  }
-
-  private getSearchHeight(): number {
-    // Search input takes 1 line when active
-    return this.searchMode ? 1 : 0;
-  }
-
-  private getNotificationHeight(): number {
-    return this.fileChanged ? 1 : 0;
-  }
-
   private getContentHeight(): number {
-    return (
-      this.viewportHeight -
-      this.getHelpHeight() -
-      this.getSearchHeight() -
-      this.getNotificationHeight()
-    );
+    return this.viewport?.viewportHeight ?? this.viewportHeight;
   }
 
   private getContentWidth(width: number): number {
@@ -268,23 +253,13 @@ export class Pager implements Component {
     }
 
     const totalLines = this.cachedLines.length;
-    const contentHeight = this.getContentHeight();
-
-    // Clamp scroll offset
-    const maxScroll = Math.max(0, totalLines - contentHeight);
-    this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, maxScroll));
-
-    // Get visible content slice
-    const start = this.scrollOffset;
-    const end = Math.min(start + contentHeight, totalLines);
-    const sliced = this.cachedLines.slice(start, end);
+    this.viewport?.setContentLineCount(totalLines);
 
     // Add line numbers if enabled, always extending line bg to viewport width
     const visible: string[] = [];
-    for (let i = 0; i < sliced.length; i++) {
-      const lineNum = start + i + 1; // 1-based line numbers
-      const lineIndex = start + i;
-      let line = sliced[i] ?? "";
+    for (let lineIndex = 0; lineIndex < this.cachedLines.length; lineIndex++) {
+      const lineNum = lineIndex + 1; // 1-based line numbers
+      let line = this.cachedLines[lineIndex] ?? "";
 
       // Highlight search matches within this line
       if (this.searchMatches.length > 0 && this.searchQuery) {
@@ -323,18 +298,9 @@ export class Pager implements Component {
       ? `${this.lineNumberColor("    ")} `
       : "";
     const emptyLine = `${emptyGutter}${emptyNumbers}${this.bgColor(" ".repeat(contentWidth))}`;
-    while (visible.length < contentHeight) {
+    const minimumHeight = this.getContentHeight();
+    while (visible.length < minimumHeight) {
       visible.push(emptyLine);
-    }
-
-    // Append file changed notification if needed
-    if (this.fileChanged) {
-      visible.push(this.renderNotification(width));
-    }
-
-    // Append search input if in search mode
-    if (this.searchMode) {
-      visible.push(this.renderSearchInput(width));
     }
 
     if (this.showingHelp) {
@@ -391,6 +357,17 @@ export class Pager implements Component {
     return this.helpBgColor(this.helpFgColor(message + padding));
   }
 
+  getFooterLines(width: number): string[] {
+    const lines: string[] = [];
+    if (this.fileChanged) {
+      lines.push(this.renderNotification(width));
+    }
+    if (this.searchMode) {
+      lines.push(this.renderSearchInput(width));
+    }
+    return lines;
+  }
+
   private buildHelpBox(maxWidth: number): string[] {
     const overlayWidth = Math.max(
       1,
@@ -430,12 +407,17 @@ export class Pager implements Component {
       ...lines.map((line) => visibleWidth(line)),
     );
     const overlayHeight = lines.length;
+    const scrollTop = this.viewport?.scrollTop ?? this.scrollOffset;
+    const viewportHeight = this.getContentHeight();
     const left = Math.max(0, Math.floor((width - overlayWidth) / 2));
     const top = Math.max(
       0,
-      Math.floor((this.viewportHeight - overlayHeight) / 2),
+      scrollTop + Math.floor((viewportHeight - overlayHeight) / 2),
     );
     const output = [...base];
+    while (output.length < scrollTop + viewportHeight) {
+      output.push(this.bgColor(" ".repeat(width)));
+    }
 
     for (let i = 0; i < lines.length; i++) {
       const target = top + i;
@@ -500,7 +482,7 @@ export class Pager implements Component {
     );
     const height = Math.min(
       Math.max(6, this.tocEntries.length + 4),
-      Math.max(3, this.viewportHeight - 4),
+      Math.max(3, this.getContentHeight() - 4),
     );
     const lines: string[] = [];
     const innerWidth = Math.max(1, width - 2);
@@ -595,11 +577,6 @@ export class Pager implements Component {
       return;
     }
 
-    const totalLines = this.cachedLines.length;
-    const contentHeight = this.getContentHeight();
-    const maxScroll = Math.max(0, totalLines - contentHeight);
-    const pageSize = Math.max(1, contentHeight - 2);
-
     // Enter search mode
     if (pmdMatches(data, "pmd.pager.search")) {
       this.searchMode = true;
@@ -623,7 +600,7 @@ export class Pager implements Component {
     if (pmdMatches(data, "pmd.pager.edit")) {
       if (this.onEdit) {
         // Calculate current line number (1-based)
-        const lineNumber = this.scrollOffset + 1;
+        const lineNumber = (this.viewport?.scrollTop ?? this.scrollOffset) + 1;
         this.onEdit(lineNumber);
       }
       return;
@@ -643,56 +620,114 @@ export class Pager implements Component {
     }
 
     if (pmdMatches(data, "pmd.common.up")) {
-      this.scrollOffset = Math.max(0, this.scrollOffset - 1);
+      this.scrollBy(-1);
       return;
     }
 
     if (pmdMatches(data, "pmd.common.down")) {
-      this.scrollOffset = Math.min(maxScroll, this.scrollOffset + 1);
+      this.scrollBy(1);
       return;
     }
 
     // Page Up
     if (pmdMatches(data, "pmd.common.pageUp")) {
-      this.scrollOffset = Math.max(0, this.scrollOffset - pageSize);
+      this.scrollPage(-1);
       return;
     }
 
     // Page Down
     if (pmdMatches(data, "pmd.common.pageDown")) {
-      this.scrollOffset = Math.min(maxScroll, this.scrollOffset + pageSize);
+      this.scrollPage(1);
       return;
     }
 
     // Home / go to top
     if (pmdMatches(data, "pmd.common.top")) {
-      this.scrollOffset = 0;
+      this.scrollToTop();
       return;
     }
 
     // End / go to bottom
     if (pmdMatches(data, "pmd.common.bottom")) {
-      this.scrollOffset = maxScroll;
+      this.scrollToBottom();
       return;
     }
 
     // Half page up
     if (pmdMatches(data, "pmd.pager.halfPageUp")) {
-      this.scrollOffset = Math.max(
-        0,
-        this.scrollOffset - Math.floor(pageSize / 2),
-      );
+      this.scrollHalfPage(-1);
       return;
     }
 
     // Half page down
     if (pmdMatches(data, "pmd.pager.halfPageDown")) {
-      this.scrollOffset = Math.min(
-        maxScroll,
-        this.scrollOffset + Math.floor(pageSize / 2),
-      );
+      this.scrollHalfPage(1);
       return;
     }
+  }
+
+  private scrollBy(lines: number): void {
+    if (this.viewport) {
+      this.viewport.scrollBy(lines);
+      return;
+    }
+    const maxScroll = Math.max(
+      0,
+      this.cachedLines.length - this.getContentHeight(),
+    );
+    this.scrollOffset = Math.max(
+      0,
+      Math.min(maxScroll, this.scrollOffset + lines),
+    );
+  }
+
+  private scrollPage(direction: 1 | -1): void {
+    if (this.viewport) {
+      this.viewport.scrollPage(direction);
+      return;
+    }
+    this.scrollBy(direction * Math.max(1, this.getContentHeight() - 2));
+  }
+
+  private scrollHalfPage(direction: 1 | -1): void {
+    if (this.viewport) {
+      this.viewport.scrollHalfPage(direction);
+      return;
+    }
+    this.scrollBy(
+      direction * Math.max(1, Math.floor(this.getContentHeight() / 2)),
+    );
+  }
+
+  private scrollToTop(): void {
+    if (this.viewport) {
+      this.viewport.scrollToTop();
+      return;
+    }
+    this.scrollOffset = 0;
+  }
+
+  private scrollToBottom(): void {
+    if (this.viewport) {
+      this.viewport.scrollToBottom();
+      return;
+    }
+    this.scrollOffset = Math.max(
+      0,
+      this.cachedLines.length - this.getContentHeight(),
+    );
+  }
+
+  private scrollToLine(line: number): void {
+    if (this.viewport) {
+      this.viewport.scrollToLine(line);
+      return;
+    }
+    const maxScroll = Math.max(
+      0,
+      this.cachedLines.length - this.getContentHeight(),
+    );
+    this.scrollOffset = Math.max(0, Math.min(maxScroll, line));
   }
 
   private handleTocInput(data: string): void {
@@ -730,7 +765,7 @@ export class Pager implements Component {
     if (pmdMatches(data, "pmd.common.confirm")) {
       const entry = this.tocEntries[this.tocIndex];
       if (entry) {
-        this.scrollOffset = Math.max(0, entry.line - 1);
+        this.scrollToLine(entry.line - 1);
       }
       this.showingToc = false;
     }
@@ -823,8 +858,7 @@ export class Pager implements Component {
 
     // Scroll so the match is roughly in the middle of the viewport
     const targetOffset = Math.max(0, matchLine - Math.floor(contentHeight / 2));
-    const maxScroll = Math.max(0, this.cachedLines.length - contentHeight);
-    this.scrollOffset = Math.min(targetOffset, maxScroll);
+    this.scrollToLine(targetOffset);
   }
 
   private highlightSearchTerms(line: string, isCurrent: boolean): string {
@@ -891,6 +925,10 @@ export class Pager implements Component {
   }
 
   getScrollInfo(): { current: number; total: number; percent: number } {
+    if (this.viewport) {
+      return this.viewport.getScrollInfo();
+    }
+
     const totalLines = this.cachedLines.length;
     const contentHeight = this.getContentHeight();
     const maxScroll = Math.max(1, totalLines - contentHeight);
