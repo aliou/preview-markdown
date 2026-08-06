@@ -1,5 +1,11 @@
 # preview-markdown
 
+## 0.12.0
+
+### Minor Changes
+
+- b505789: Upgrade `@earendil-works/pi-tui` to 0.83.0 and regenerate the markdown-renderer patch.
+
 ## 0.11.0
 
 ### Minor Changes
