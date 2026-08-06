@@ -1,5 +1,11 @@
 # preview-markdown
 
+## 0.11.0
+
+### Minor Changes
+
+- 46db944: Wrap URLs in OSC 8 hyperlinks so they are clickable in compatible terminals, including bare URLs and the URL shown in `text (url)` link fallbacks.
+
 ## 0.10.0
 
 ### Minor Changes
