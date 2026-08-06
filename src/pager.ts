@@ -6,6 +6,7 @@ import {
   sliceWithWidth,
 } from "@earendil-works/pi-tui/dist/utils.js";
 import type { GitLineStatus } from "./git.js";
+import { wrapUrlsHyperlinks } from "./hyperlink.js";
 import { pmdMatches } from "./keybindings.js";
 import type { SourceSpan } from "./source-map.js";
 
@@ -293,6 +294,12 @@ export class Pager implements Component {
           line = this.highlightSearchTerms(line, isCurrent);
         }
       }
+
+      // Wrap bare URLs in OSC 8 hyperlinks so they are clickable in terminals
+      // that support it. Applied after search highlighting (which runs on the
+      // raw line) and before gutters/numbers are prefixed. URL text stays
+      // visible on terminals that ignore OSC 8, so no link target is hidden.
+      line = wrapUrlsHyperlinks(line);
 
       const gutter = this.isGitGutterVisible()
         ? this.renderGitGutter(this.cachedSourceSpans[lineIndex] ?? null)
