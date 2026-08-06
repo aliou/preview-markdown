@@ -1,5 +1,15 @@
 # preview-markdown
 
+## 0.13.0
+
+### Minor Changes
+
+- 522bf78: Migrate fullscreen rendering to `@earendil-works/pi-tui` 0.84.0 with `TuiAltScreen`, `ScrollView`, and fixed status chrome.
+
+### Patch Changes
+
+- 0f14b64: Add syntax highlighting for more fenced code block languages, including `diff`.
+
 ## 0.12.0
 
 ### Minor Changes
