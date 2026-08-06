@@ -341,6 +341,37 @@
       }
     },
     {
+      "name": "Diff inserted",
+      "scope": [
+        "markup.inserted.diff",
+        "punctuation.definition.inserted.diff"
+      ],
+      "settings": {
+        "foreground": "#386014"
+      }
+    },
+    {
+      "name": "Diff deleted",
+      "scope": [
+        "markup.deleted.diff",
+        "punctuation.definition.deleted.diff"
+      ],
+      "settings": {
+        "foreground": "#a02020"
+      }
+    },
+    {
+      "name": "Diff changed",
+      "scope": [
+        "markup.changed.diff",
+        "meta.diff.range",
+        "punctuation.definition.changed.diff"
+      ],
+      "settings": {
+        "foreground": "#b87520"
+      }
+    },
+    {
       "name": "Inline code / literals",
       "scope": [
         "markup.inline.raw",
