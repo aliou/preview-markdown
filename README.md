@@ -8,7 +8,7 @@ This project is an experiment in building a complete tool using AI coding agents
 
 - Directory browser: run `pmd` or `pmd <dir>` to browse and open markdown files
 - Syntax highlighting for fenced code blocks with boxed borders and language labels
-- Mermaid diagram support, rendered as ASCII
+- Mermaid diagram support, rendered as Unicode box art
 - MDX support, with JSX stripped before rendering
 - Vim-style navigation (j/k, d/u, g/G, etc.)
 - Search with `/` and navigate matches with `n`/`N`

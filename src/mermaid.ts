@@ -1,104 +1,125 @@
 import {
+  type Cls,
+  diagramKind,
+  type MermaidArt,
+  render,
+  sourceBox,
+} from "grok-mermaid";
+import {
   createPreparedMarkdown,
   type PreparedMarkdown,
   type SourceSpan,
 } from "./source-map.js";
-import { renderMermaidAscii } from "./vendor/beautiful-mermaid.js";
 
-function rewriteStateDiagramStartEnd(diagram: string): string {
-  const lines = diagram.split("\n");
+export type MermaidTheme = Partial<Record<Cls, (text: string) => string>>;
 
-  // Find first meaningful line to detect diagram type.
-  const headerIndex = lines.findIndex((line) => {
-    const trimmed = line.trim();
-    return trimmed.length > 0 && !trimmed.startsWith("%%");
-  });
+function styleSpan(
+  span: { text: string; cls: Cls },
+  theme: MermaidTheme,
+): string {
+  const styler = theme[span.cls] as ((text: string) => string) | undefined;
+  if (styler) return styler(span.text);
+  return span.text;
+}
 
-  if (headerIndex < 0) return diagram;
+function renderThemedDiagram(art: MermaidArt, theme: MermaidTheme): string[] {
+  return art.styled.map((row) =>
+    row.map((span) => styleSpan(span, theme)).join(""),
+  );
+}
 
-  const header = lines[headerIndex]?.trim().toLowerCase() ?? "";
-  if (!/^statediagram(?:-v2)?$/.test(header)) {
-    return diagram;
+function formatWidthWarning(naturalWidth: number): string {
+  return ` diagram needs ${naturalWidth} columns; increase width to view `;
+}
+
+function isOversized(art: MermaidArt, maxWidth: number): boolean {
+  return maxWidth > 0 && art.width > maxWidth;
+}
+
+function processDiagram(
+  diagram: string,
+  sourceSpan: SourceSpan,
+  maxWidth: number,
+  theme: MermaidTheme,
+): { lines: string[]; lineMap: Array<SourceSpan | null> } {
+  const result: string[] = [];
+  const lineMap: Array<SourceSpan | null> = [];
+
+  const push = (line: string, span: SourceSpan | null) => {
+    result.push(line);
+    lineMap.push(span);
+  };
+
+  const art = render(diagram.trimEnd());
+  if (art && !isOversized(art, maxWidth)) {
+    for (const renderedLine of renderThemedDiagram(art, theme)) {
+      push(renderedLine, sourceSpan);
+    }
+    return { lines: result, lineMap };
   }
 
-  let startCount = 0;
-  let endCount = 0;
-  const aliases: string[] = [];
+  if (art) {
+    push(formatWidthWarning(art.width), sourceSpan);
+    return { lines: result, lineMap };
+  }
 
-  const rewritten = lines.map((line) => {
-    const startMatch = line.match(
-      /^(\s*)\[\*\](\s*-->\s*)([\w-]+)(\s*:\s*.*)?$/,
-    );
-    if (startMatch) {
-      startCount++;
-      const id = `__pmd_start_${startCount}`;
-      aliases.push(`state "● Start" as ${id}`);
-      const indent = startMatch[1] ?? "";
-      const arrow = startMatch[2] ?? " --> ";
-      const target = startMatch[3] ?? "";
-      const label = startMatch[4] ?? "";
-      return `${indent}${id}${arrow}${target}${label}`;
-    }
+  const framed = sourceBox(diagram, maxWidth > 0 ? maxWidth : undefined);
 
-    const endMatch = line.match(/^(\s*)([\w-]+)(\s*-->\s*)\[\*\](\s*:\s*.*)?$/);
-    if (endMatch) {
-      endCount++;
-      const id = `__pmd_end_${endCount}`;
-      aliases.push(`state "◎ End" as ${id}`);
-      const indent = endMatch[1] ?? "";
-      const source = endMatch[2] ?? "";
-      const arrow = endMatch[3] ?? " --> ";
-      const label = endMatch[4] ?? "";
-      return `${indent}${source}${arrow}${id}${label}`;
-    }
+  for (const line of framed.plain) {
+    push(line, sourceSpan);
+  }
 
-    return line;
-  });
-
-  if (aliases.length === 0) return diagram;
-
-  const before = rewritten.slice(0, headerIndex + 1);
-  const after = rewritten.slice(headerIndex + 1);
-  return [...before, ...aliases, ...after].join("\n");
+  return { lines: result, lineMap };
 }
 
 /**
  * Pre-process markdown content: replace mermaid fenced code blocks with
- * ASCII-rendered output. On render failure, keep original fenced block.
+ * grok-mermaid Unicode box art. On render failure or oversize, keep a framed
+ * source box and a short hint.
  */
 export async function preprocessMermaid(
   content: string,
   maxWidth: number,
+  theme?: MermaidTheme,
 ): Promise<string> {
   const document = await preprocessMermaidWithSourceMap(
     createPreparedMarkdown(content),
     maxWidth,
+    theme,
   );
   return document.content;
 }
 
 export async function preprocessMermaidWithSourceMap(
   document: PreparedMarkdown,
-  _maxWidth: number,
+  maxWidth: number,
+  theme: MermaidTheme = {},
 ): Promise<PreparedMarkdown> {
   const lines = document.content.split(/\r?\n/);
   const result: string[] = [];
   const lineMap: Array<SourceSpan | null> = [];
   let transformed = false;
 
-  const push = (line: string, sourceIndex?: number) => {
-    result.push(line);
-    lineMap.push(
-      sourceIndex === undefined
-        ? null
-        : (document.lineMap[sourceIndex] ?? null),
-    );
+  const pushLines = (newLines: string[], newMap: Array<SourceSpan | null>) => {
+    for (let i = 0; i < newLines.length; i++) {
+      result.push(newLines[i] ?? "");
+      lineMap.push(newMap[i] ?? null);
+    }
+  };
+
+  const pushOriginal = (from: number, to: number) => {
+    for (let sourceIndex = from; sourceIndex <= to; sourceIndex++) {
+      const sourceLine = lines[sourceIndex];
+      if (sourceLine === undefined) continue;
+      result.push(sourceLine);
+      lineMap.push(document.lineMap[sourceIndex] ?? null);
+    }
   };
 
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
     if (line === undefined || !/^```mermaid\s*$/.test(line)) {
-      if (line !== undefined) push(line, index);
+      if (line !== undefined) pushOriginal(index, index);
       continue;
     }
 
@@ -111,28 +132,31 @@ export async function preprocessMermaidWithSourceMap(
     }
 
     if (closingIndex === -1) {
-      push(line, index);
+      pushOriginal(index, index);
       continue;
     }
 
+    const sourceSpan: SourceSpan = {
+      startLine: document.lineMap[index]?.startLine ?? index + 1,
+      endLine: document.lineMap[closingIndex]?.endLine ?? closingIndex + 1,
+    };
+
     const diagram = lines.slice(index + 1, closingIndex).join("\n");
-    try {
-      const rewritten = rewriteStateDiagramStartEnd(diagram.trimEnd());
-      const rendered = renderMermaidAscii(rewritten);
-      for (const renderedLine of rendered.split("\n")) {
-        push(renderedLine);
-      }
-      transformed = true;
-    } catch {
-      for (
-        let sourceIndex = index;
-        sourceIndex <= closingIndex;
-        sourceIndex++
-      ) {
-        const sourceLine = lines[sourceIndex];
-        if (sourceLine !== undefined) push(sourceLine, sourceIndex);
-      }
+    if (diagramKind(diagram) === null) {
+      pushOriginal(index, closingIndex);
+      index = closingIndex;
+      continue;
     }
+
+    const { lines: renderedLines, lineMap: renderedMap } = processDiagram(
+      diagram,
+      sourceSpan,
+      maxWidth,
+      theme,
+    );
+
+    if (renderedLines.length > 0) transformed = true;
+    pushLines(renderedLines, renderedMap);
 
     index = closingIndex;
   }

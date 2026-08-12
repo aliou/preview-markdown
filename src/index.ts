@@ -24,7 +24,10 @@ import { createGitStatusResolver, type GitStatusResolver } from "./git.js";
 import { createHighlightCodeFn, initSyntaxHighlighter } from "./highlighter.js";
 import { PMD_KEYBINDINGS } from "./keybindings.js";
 import { preprocessMdxWithSourceMap } from "./mdx.js";
-import { preprocessMermaidWithSourceMap } from "./mermaid.js";
+import {
+  type MermaidTheme,
+  preprocessMermaidWithSourceMap,
+} from "./mermaid.js";
 import { Pager, type TocEntry } from "./pager.js";
 import { createPreparedMarkdown } from "./source-map.js";
 import {
@@ -228,13 +231,21 @@ async function buildDocument(
   filePath: string | null,
   markdownTheme: ReturnType<typeof buildMarkdownTheme>,
   defaultTextStyle: ReturnType<typeof buildDefaultTextStyle>,
-  maxMermaidWidth: number,
+  mermaidMaxWidth: (hasGitGutter: boolean) => number,
+  mermaidTheme: MermaidTheme,
 ): Promise<Document> {
   let prepared = createPreparedMarkdown(content);
   if (filePath?.endsWith(".mdx")) {
     prepared = preprocessMdxWithSourceMap(prepared);
   }
-  prepared = await preprocessMermaidWithSourceMap(prepared, maxMermaidWidth);
+  const provisionalGitStatusForSpan = filePath
+    ? createGitStatusResolver(filePath, content, prepared)
+    : undefined;
+  prepared = await preprocessMermaidWithSourceMap(
+    prepared,
+    mermaidMaxWidth(provisionalGitStatusForSpan !== undefined),
+    mermaidTheme,
+  );
 
   return {
     component: await buildContentComponent(
@@ -380,15 +391,21 @@ async function main(): Promise<void> {
   tui.setFocus(mainSwitcher);
   tui.setTerminalColorSchemeNotifications(true);
 
-  const getMermaidMaxWidth = (): number => {
-    const targetWidth =
-      options.width > 0
-        ? Math.min(options.width, terminal.columns)
-        : terminal.columns;
-    return Math.max(20, targetWidth - CONTENT_PADDING_X * 2);
-  };
-
   const showLineNumbers = options.lineNumbers || config.showLineNumbers;
+
+  const getMermaidMaxWidth = (hasGitGutter: boolean): number => {
+    const lineNumberWidth = showLineNumbers ? 5 : 0;
+    const possibleGitGutterWidth = hasGitGutter ? 1 : 0;
+    const availablePagerWidth = Math.max(
+      1,
+      terminal.columns - lineNumberWidth - possibleGitGutterWidth,
+    );
+    const targetWidth =
+      options.width > 0 && options.width < availablePagerWidth
+        ? options.width
+        : availablePagerWidth;
+    return Math.max(1, targetWidth - CONTENT_PADDING_X * 2);
+  };
   // --- Color factories (rebuilt on theme change) ---
 
   const buildBrowserColors = () => ({
@@ -422,6 +439,14 @@ async function main(): Promise<void> {
     gitMovedColor: chalk.hex(currentTheme.colors.gitMoved),
   });
 
+  const buildMermaidTheme = (): MermaidTheme => ({
+    border: chalk.hex(currentTheme.colors.codeBlockBorder),
+    text: chalk.hex(currentTheme.colors.foreground),
+    edge: chalk.hex(currentTheme.colors.link),
+    edgeLabel: chalk.hex(currentTheme.colors.comment),
+    title: chalk.bold.hex(currentTheme.colors.heading),
+  });
+
   const buildStatusBarColors = () => ({
     bgColor: chalk.bgHex(currentTheme.colors.statusBarBg),
     fgColor: chalk.hex(currentTheme.colors.statusBarFg),
@@ -431,6 +456,7 @@ async function main(): Promise<void> {
   let activePager: Pager | null = null;
   let activeStatusBar: StatusBar | null = null;
   let activeFilePath: string | null = null;
+  let activeRawContent: string | null = mode === "stdin" ? content : null;
   let activeFileWatcher: ReturnType<typeof watchFile> | null = null;
 
   // Browser uses header-only chrome, no bottom status bar.
@@ -459,22 +485,7 @@ async function main(): Promise<void> {
 
     // Update active pager colors (only if pager is currently shown)
     if (activePager && mainSwitcher.getActive() === activePager) {
-      if (activeFilePath) {
-        try {
-          const newContent = fs.readFileSync(activeFilePath, "utf8");
-          const document = await buildDocument(
-            newContent,
-            activeFilePath,
-            markdownTheme,
-            defaultTextStyle,
-            getMermaidMaxWidth(),
-          );
-          activePager.setContent(document.component, document.tocEntries);
-          activePager.setGitStatusResolver(document.gitStatusForSpan);
-        } catch {
-          // File temporarily unavailable
-        }
-      }
+      await rebuildActiveDocument();
       activePager.updateColors(buildPagerColors());
       if (activeStatusBar) {
         const sc = buildStatusBarColors();
@@ -488,6 +499,25 @@ async function main(): Promise<void> {
   tui.onTerminalColorSchemeChange((scheme) => {
     void handleColorSchemeChange(scheme);
   });
+
+  async function rebuildActiveDocument(): Promise<void> {
+    if (!activePager || mainSwitcher.getActive() !== activePager) return;
+
+    const nextContent = activeRawContent;
+    if (nextContent === null) return;
+
+    const document = await buildDocument(
+      nextContent,
+      activeFilePath,
+      markdownTheme,
+      defaultTextStyle,
+      getMermaidMaxWidth,
+      buildMermaidTheme(),
+    );
+    activeRawContent = nextContent;
+    activePager.setContent(document.component, document.tocEntries);
+    activePager.setGitStatusResolver(document.gitStatusForSpan);
+  }
 
   // --- Pager creation helper ---
   // fromBrowser: true  -> q goes back to browser
@@ -529,8 +559,10 @@ async function main(): Promise<void> {
               pagerFilePath,
               markdownTheme,
               defaultTextStyle,
-              getMermaidMaxWidth(),
+              getMermaidMaxWidth,
+              buildMermaidTheme(),
             );
+            activeRawContent = newContent;
             pager.setContent(nextDocument.component, nextDocument.tocEntries);
             pager.setGitStatusResolver(nextDocument.gitStatusForSpan);
             pager.setFileChanged(false);
@@ -552,8 +584,10 @@ async function main(): Promise<void> {
               pagerFilePath,
               markdownTheme,
               defaultTextStyle,
-              getMermaidMaxWidth(),
+              getMermaidMaxWidth,
+              buildMermaidTheme(),
             );
+            activeRawContent = newContent;
             pager.setContent(nextDocument.component, nextDocument.tocEntries);
             pager.setGitStatusResolver(nextDocument.gitStatusForSpan);
           } catch {
@@ -600,7 +634,8 @@ async function main(): Promise<void> {
         entry.absolutePath,
         markdownTheme,
         defaultTextStyle,
-        getMermaidMaxWidth(),
+        getMermaidMaxWidth,
+        buildMermaidTheme(),
       );
       const { pager, statusBar } = buildPager(
         document,
@@ -612,6 +647,7 @@ async function main(): Promise<void> {
       activePager = pager;
       activeStatusBar = statusBar;
       activeFilePath = entry.absolutePath;
+      activeRawContent = fileContent;
 
       activeFileWatcher = watchFile(entry.absolutePath, () => {
         pager.setFileChanged(true);
@@ -655,7 +691,8 @@ async function main(): Promise<void> {
       filePath,
       markdownTheme,
       defaultTextStyle,
-      getMermaidMaxWidth(),
+      getMermaidMaxWidth,
+      buildMermaidTheme(),
     );
     const { pager, statusBar } = buildPager(
       document,
@@ -667,6 +704,7 @@ async function main(): Promise<void> {
     activePager = pager;
     activeStatusBar = statusBar;
     activeFilePath = filePath;
+    activeRawContent = content;
 
     if (filePath) {
       activeFileWatcher = watchFile(filePath, () => {
@@ -689,7 +727,9 @@ async function main(): Promise<void> {
   });
 
   process.stdout.on("resize", () => {
-    const timer = setTimeout(() => tui.requestRender(true), 0);
+    const timer = setTimeout(() => {
+      void rebuildActiveDocument().finally(() => tui.requestRender(true));
+    }, 0);
     timer.unref();
   });
 

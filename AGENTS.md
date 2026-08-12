@@ -44,7 +44,7 @@ Both are built on top of `@earendil-works/pi-tui`, which provides the TUI framew
 - `@earendil-works/pi-tui` -- TUI framework and markdown rendering (patched)
 - `shiki` -- syntax highlighting engine
 - `chalk` -- terminal colors
-- `beautiful-mermaid` -- Mermaid-to-ASCII rendering
+- `grok-mermaid` -- Mermaid-to-Unicode box-art rendering
 
 ## Development
 
