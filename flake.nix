@@ -16,15 +16,15 @@
       binaries = {
         "aarch64-darwin" = {
           url = "https://github.com/aliou/preview-markdown/releases/download/v${version}/pmd-darwin-arm64";
-          hash = "sha256-m3HLGtz8VpD0pzTLMncwfyRYzoqdxAmDLPJYynew8W4="; # darwin
+          hash = "sha256-I9zlkdIaRRYyyqwlEVad5N4eTsXLlSqz6RhHTmWarAY="; # darwin
         };
         "aarch64-linux" = {
           url = "https://github.com/aliou/preview-markdown/releases/download/v${version}/pmd-linux-arm64";
-          hash = "sha256-iGtkfoFRe5dv29TV3GFonjsHCuNQIjwh7IshuMCHRXg="; # linux-arm64
+          hash = "sha256-WxZ17WKNqdf1XgEVd7aLnl5pNl3I2SzAij47Pwf//xs="; # linux-arm64
         };
         "x86_64-linux" = {
           url = "https://github.com/aliou/preview-markdown/releases/download/v${version}/pmd-linux-x64";
-          hash = "sha256-DY0sqwjtnm2cITdV4IBR9UEqQH5EfvU8xRcOPNEDq0Q="; # linux-x64
+          hash = "sha256-auMOWbsGlNoDZBTFNiYrnm7BLZv2w8dH95StdLgB47g="; # linux-x64
         };
       };
 
