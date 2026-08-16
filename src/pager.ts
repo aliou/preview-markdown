@@ -46,7 +46,10 @@ interface SourceMappedRenderResult {
 }
 
 interface SourceMappedComponent extends Component {
-  renderWithSourceMap(width: number): SourceMappedRenderResult;
+  renderWithSourceMap(
+    width: number,
+    fullWidth?: number,
+  ): SourceMappedRenderResult;
 }
 
 function isSourceMappedComponent(
@@ -65,6 +68,7 @@ export interface PagerOptions {
   onEdit?: (lineNumber: number) => void;
   onReload?: () => void;
   onSuspend?: () => void;
+  sourceLineForSpan?: (span: SourceSpan | null) => number | null;
   showLineNumbers?: boolean;
   gitStatusForSpan?: (span: SourceSpan | null) => GitLineStatus | null;
   wrapWidth?: number;
@@ -91,6 +95,7 @@ export class Pager implements Component {
   private onEdit?: (lineNumber: number) => void;
   private onReload?: () => void;
   private onSuspend?: () => void;
+  private sourceLineForSpan?: (span: SourceSpan | null) => number | null;
   private fileChanged = false;
   private showLineNumbers: boolean;
   private wrapWidth: number;
@@ -98,6 +103,7 @@ export class Pager implements Component {
   private cachedLines: string[] = [];
   private cachedSourceSpans: Array<SourceSpan | null> = [];
   private cachedWidth = 0;
+  private cachedFullWidth = 0;
   private viewportHeight = 0;
   private showingHelp = false;
   private showingToc = false;
@@ -131,6 +137,7 @@ export class Pager implements Component {
     this.onEdit = options.onEdit;
     this.onReload = options.onReload;
     this.onSuspend = options.onSuspend;
+    this.sourceLineForSpan = options.sourceLineForSpan;
     this.showLineNumbers = options.showLineNumbers ?? false;
     this.gitStatusForSpan = options.gitStatusForSpan;
     this.wrapWidth = options.wrapWidth ?? 0;
@@ -172,6 +179,12 @@ export class Pager implements Component {
   ): void {
     this.gitStatusForSpan = resolver;
     this.invalidate();
+  }
+
+  setSourceLineResolver(
+    resolver: ((span: SourceSpan | null) => number | null) | undefined,
+  ): void {
+    this.sourceLineForSpan = resolver;
   }
 
   setViewportHeight(height: number): void {
@@ -219,6 +232,7 @@ export class Pager implements Component {
     this.cachedLines = [];
     this.cachedSourceSpans = [];
     this.cachedWidth = 0;
+    this.cachedFullWidth = 0;
   }
 
   private getContentHeight(): number {
@@ -226,9 +240,7 @@ export class Pager implements Component {
   }
 
   private getContentWidth(width: number): number {
-    const gutterWidth = this.isGitGutterVisible() ? GIT_GUTTER_WIDTH : 0;
-    const availableWidth =
-      width - gutterWidth - (this.showLineNumbers ? LINE_NUMBER_WIDTH : 0);
+    const availableWidth = this.getAvailableContentWidth(width);
     // Use wrapWidth if set and smaller than available width
     if (this.wrapWidth > 0 && this.wrapWidth < availableWidth) {
       return this.wrapWidth;
@@ -236,13 +248,29 @@ export class Pager implements Component {
     return availableWidth;
   }
 
+  private getAvailableContentWidth(width: number): number {
+    const gutterWidth = this.isGitGutterVisible() ? GIT_GUTTER_WIDTH : 0;
+    return Math.max(
+      1,
+      width - gutterWidth - (this.showLineNumbers ? LINE_NUMBER_WIDTH : 0),
+    );
+  }
+
   render(width: number): string[] {
     const contentWidth = this.getContentWidth(width);
+    const fullContentWidth = this.getAvailableContentWidth(width);
 
     // Re-render content if width changed
-    if (this.cachedWidth !== contentWidth || this.cachedLines.length === 0) {
+    if (
+      this.cachedWidth !== contentWidth ||
+      this.cachedFullWidth !== fullContentWidth ||
+      this.cachedLines.length === 0
+    ) {
       if (isSourceMappedComponent(this.content)) {
-        const result = this.content.renderWithSourceMap(contentWidth);
+        const result = this.content.renderWithSourceMap(
+          contentWidth,
+          fullContentWidth,
+        );
         this.cachedLines = result.lines;
         this.cachedSourceSpans = result.sourceSpans;
       } else {
@@ -250,6 +278,7 @@ export class Pager implements Component {
         this.cachedSourceSpans = new Array(this.cachedLines.length).fill(null);
       }
       this.cachedWidth = contentWidth;
+      this.cachedFullWidth = fullContentWidth;
     }
 
     const totalLines = this.cachedLines.length;
@@ -340,6 +369,13 @@ export class Pager implements Component {
       default:
         return this.bgColor(" ");
     }
+  }
+
+  private getEditorLineForRenderedLine(renderedLineIndex: number): number {
+    const renderedLineNumber = renderedLineIndex + 1;
+    const span = this.cachedSourceSpans[renderedLineIndex] ?? null;
+    const sourceLine = this.sourceLineForSpan?.(span) ?? span?.startLine;
+    return sourceLine ?? renderedLineNumber;
   }
 
   private renderSearchInput(width: number): string {
@@ -599,8 +635,8 @@ export class Pager implements Component {
     // Edit in $EDITOR
     if (pmdMatches(data, "pmd.pager.edit")) {
       if (this.onEdit) {
-        // Calculate current line number (1-based)
-        const lineNumber = (this.viewport?.scrollTop ?? this.scrollOffset) + 1;
+        const lineIndex = this.viewport?.scrollTop ?? this.scrollOffset;
+        const lineNumber = this.getEditorLineForRenderedLine(lineIndex);
         this.onEdit(lineNumber);
       }
       return;
@@ -730,6 +766,24 @@ export class Pager implements Component {
     this.scrollOffset = Math.max(0, Math.min(maxScroll, line));
   }
 
+  private findRenderedLineForSourceLine(sourceLine: number): number {
+    for (let index = 0; index < this.cachedSourceSpans.length; index++) {
+      const span = this.cachedSourceSpans[index];
+      if (!span) continue;
+      if (sourceLine >= span.startLine && sourceLine <= span.endLine) {
+        return index;
+      }
+    }
+
+    for (let index = 0; index < this.cachedSourceSpans.length; index++) {
+      const span = this.cachedSourceSpans[index];
+      if (!span) continue;
+      if (span.startLine >= sourceLine) return index;
+    }
+
+    return Math.max(0, sourceLine - 1);
+  }
+
   private handleTocInput(data: string): void {
     if (
       pmdMatches(data, "pmd.common.cancel") ||
@@ -765,7 +819,7 @@ export class Pager implements Component {
     if (pmdMatches(data, "pmd.common.confirm")) {
       const entry = this.tocEntries[this.tocIndex];
       if (entry) {
-        this.scrollToLine(entry.line - 1);
+        this.scrollToLine(this.findRenderedLineForSourceLine(entry.line));
       }
       this.showingToc = false;
     }

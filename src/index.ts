@@ -4,7 +4,6 @@ import * as path from "node:path";
 import {
   type Component,
   KeybindingsManager,
-  Markdown,
   ProcessTerminal,
   ScrollView,
   Spacer,
@@ -25,11 +24,15 @@ import { createHighlightCodeFn, initSyntaxHighlighter } from "./highlighter.js";
 import { PMD_KEYBINDINGS } from "./keybindings.js";
 import { preprocessMdxWithSourceMap } from "./mdx.js";
 import {
+  createMermaidMarkdownComponent,
   type MermaidTheme,
-  preprocessMermaidWithSourceMap,
 } from "./mermaid.js";
 import { Pager, type TocEntry } from "./pager.js";
-import { createPreparedMarkdown } from "./source-map.js";
+import {
+  createPreparedMarkdown,
+  mapPreparedSpan,
+  type SourceSpan,
+} from "./source-map.js";
 import {
   buildDefaultTextStyle,
   buildMarkdownTheme,
@@ -206,17 +209,17 @@ class StatusBar implements Component {
 }
 
 async function buildContentComponent(
-  content: string,
+  document: ReturnType<typeof createPreparedMarkdown>,
   markdownTheme: ReturnType<typeof buildMarkdownTheme>,
   defaultTextStyle: ReturnType<typeof buildDefaultTextStyle>,
+  mermaidTheme: MermaidTheme,
 ): Promise<Component> {
-  return new Markdown(
-    content,
-    CONTENT_PADDING_X,
-    1,
+  return createMermaidMarkdownComponent(
+    document,
     markdownTheme,
     defaultTextStyle,
-    { renderLatex: false },
+    mermaidTheme,
+    CONTENT_PADDING_X,
   );
 }
 
@@ -224,6 +227,7 @@ interface Document {
   component: Component;
   tocEntries: TocEntry[];
   gitStatusForSpan?: GitStatusResolver;
+  sourceLineForSpan: (span: SourceSpan | null) => number | null;
 }
 
 async function buildDocument(
@@ -231,32 +235,25 @@ async function buildDocument(
   filePath: string | null,
   markdownTheme: ReturnType<typeof buildMarkdownTheme>,
   defaultTextStyle: ReturnType<typeof buildDefaultTextStyle>,
-  mermaidMaxWidth: (hasGitGutter: boolean) => number,
   mermaidTheme: MermaidTheme,
 ): Promise<Document> {
   let prepared = createPreparedMarkdown(content);
   if (filePath?.endsWith(".mdx")) {
     prepared = preprocessMdxWithSourceMap(prepared);
   }
-  const provisionalGitStatusForSpan = filePath
-    ? createGitStatusResolver(filePath, content, prepared)
-    : undefined;
-  prepared = await preprocessMermaidWithSourceMap(
-    prepared,
-    mermaidMaxWidth(provisionalGitStatusForSpan !== undefined),
-    mermaidTheme,
-  );
-
   return {
     component: await buildContentComponent(
-      prepared.content,
+      prepared,
       markdownTheme,
       defaultTextStyle,
+      mermaidTheme,
     ),
     tocEntries: extractTocEntries(prepared.content),
     gitStatusForSpan: filePath
       ? createGitStatusResolver(filePath, content, prepared)
       : undefined,
+    sourceLineForSpan: (span) =>
+      mapPreparedSpan(prepared, span)?.startLine ?? null,
   };
 }
 
@@ -393,19 +390,6 @@ async function main(): Promise<void> {
 
   const showLineNumbers = options.lineNumbers || config.showLineNumbers;
 
-  const getMermaidMaxWidth = (hasGitGutter: boolean): number => {
-    const lineNumberWidth = showLineNumbers ? 5 : 0;
-    const possibleGitGutterWidth = hasGitGutter ? 1 : 0;
-    const availablePagerWidth = Math.max(
-      1,
-      terminal.columns - lineNumberWidth - possibleGitGutterWidth,
-    );
-    const targetWidth =
-      options.width > 0 && options.width < availablePagerWidth
-        ? options.width
-        : availablePagerWidth;
-    return Math.max(1, targetWidth - CONTENT_PADDING_X * 2);
-  };
   // --- Color factories (rebuilt on theme change) ---
 
   const buildBrowserColors = () => ({
@@ -511,12 +495,12 @@ async function main(): Promise<void> {
       activeFilePath,
       markdownTheme,
       defaultTextStyle,
-      getMermaidMaxWidth,
       buildMermaidTheme(),
     );
     activeRawContent = nextContent;
     activePager.setContent(document.component, document.tocEntries);
     activePager.setGitStatusResolver(document.gitStatusForSpan);
+    activePager.setSourceLineResolver(document.sourceLineForSpan);
   }
 
   // --- Pager creation helper ---
@@ -559,12 +543,12 @@ async function main(): Promise<void> {
               pagerFilePath,
               markdownTheme,
               defaultTextStyle,
-              getMermaidMaxWidth,
               buildMermaidTheme(),
             );
             activeRawContent = newContent;
             pager.setContent(nextDocument.component, nextDocument.tocEntries);
             pager.setGitStatusResolver(nextDocument.gitStatusForSpan);
+            pager.setSourceLineResolver(nextDocument.sourceLineForSpan);
             pager.setFileChanged(false);
             tui.requestRender(true);
           } catch {
@@ -584,12 +568,12 @@ async function main(): Promise<void> {
               pagerFilePath,
               markdownTheme,
               defaultTextStyle,
-              getMermaidMaxWidth,
               buildMermaidTheme(),
             );
             activeRawContent = newContent;
             pager.setContent(nextDocument.component, nextDocument.tocEntries);
             pager.setGitStatusResolver(nextDocument.gitStatusForSpan);
+            pager.setSourceLineResolver(nextDocument.sourceLineForSpan);
           } catch {
             // Ignore read errors after edit
           }
@@ -603,6 +587,7 @@ async function main(): Promise<void> {
       },
       showLineNumbers,
       gitStatusForSpan: document.gitStatusForSpan,
+      sourceLineForSpan: document.sourceLineForSpan,
       wrapWidth: options.width,
       tocEntries: document.tocEntries,
       ...buildPagerColors(),
@@ -634,7 +619,6 @@ async function main(): Promise<void> {
         entry.absolutePath,
         markdownTheme,
         defaultTextStyle,
-        getMermaidMaxWidth,
         buildMermaidTheme(),
       );
       const { pager, statusBar } = buildPager(
@@ -691,7 +675,6 @@ async function main(): Promise<void> {
       filePath,
       markdownTheme,
       defaultTextStyle,
-      getMermaidMaxWidth,
       buildMermaidTheme(),
     );
     const { pager, statusBar } = buildPager(
