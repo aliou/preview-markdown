@@ -1,5 +1,12 @@
 # preview-markdown
 
+## 0.13.1
+
+### Patch Changes
+
+- Render Mermaid diagrams against the full pager width and clip oversized diagrams with a width hint.
+- 71f64cb: Render Mermaid diagrams with `grok-mermaid` and show a width hint when diagrams exceed the available terminal width.
+
 ## 0.13.0
 
 ### Minor Changes
