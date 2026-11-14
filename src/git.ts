@@ -1,12 +1,7 @@
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import {
-  mapPreparedSpan,
-  type PreparedMarkdown,
-  type SourceSpan,
-  sourceLineCount,
-} from "./source-map";
+import { type SourceSpan, sourceLineCount } from "./source-map";
 
 export type GitLineStatus = "added" | "modified" | "deleted" | "moved";
 
@@ -36,13 +31,11 @@ const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
 export function createGitStatusResolver(
   filePath: string,
   originalContent: string,
-  document: PreparedMarkdown,
 ): GitStatusResolver | undefined {
   const lineMap = getGitLineMap(filePath, originalContent);
   if (!lineMap) return undefined;
 
-  return (span) => {
-    const originalSpan = mapPreparedSpan(document, span);
+  return (originalSpan) => {
     if (!originalSpan) return null;
 
     let resolved: GitLineStatus | null = null;

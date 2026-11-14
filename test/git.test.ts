@@ -3,10 +3,8 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
 import { createGitStatusResolver } from "../src/git";
 import { Pager } from "../src/pager";
-import { createPreparedMarkdown } from "../src/source-map";
 
 const temporaryDirectories: string[] = [];
 
@@ -73,11 +71,7 @@ describe("Git gutter status resolver", () => {
     ].join("\n");
     fs.writeFileSync(filePath, current);
 
-    const resolver = createGitStatusResolver(
-      filePath,
-      current,
-      createPreparedMarkdown(current),
-    );
+    const resolver = createGitStatusResolver(filePath, current);
 
     expect(statusAt(resolver, 2)).toBe("deleted");
     expect(statusAt(resolver, 3)).toBe("modified");
@@ -94,49 +88,10 @@ describe("Git gutter status resolver", () => {
     const filePath = path.join(directory, "new.md");
     const content = "first\nsecond\n";
     fs.writeFileSync(filePath, content);
-    const resolver = createGitStatusResolver(
-      filePath,
-      content,
-      createPreparedMarkdown(content),
-    );
+    const resolver = createGitStatusResolver(filePath, content);
 
     expect(statusAt(resolver, 1)).toBe("added");
     expect(statusAt(resolver, 2)).toBe("added");
-  });
-});
-
-describe("Markdown source maps", () => {
-  test("keeps rendered lines and source spans aligned", () => {
-    const identity = (text: string) => text;
-    const theme: MarkdownTheme = {
-      heading: identity,
-      link: identity,
-      linkUrl: identity,
-      code: identity,
-      codeBlock: identity,
-      codeBlockBorder: identity,
-      quote: identity,
-      quoteBorder: identity,
-      hr: identity,
-      listBullet: identity,
-      bold: identity,
-      italic: identity,
-      strikethrough: identity,
-      underline: identity,
-    };
-    const markdown = new Markdown(
-      "# Heading\n\nA paragraph that will wrap when the viewport is narrow enough.\n",
-      0,
-      0,
-      theme,
-    );
-
-    const result = markdown.renderWithSourceMap(20);
-
-    expect(result.lines).toEqual(markdown.render(20));
-    expect(result.sourceSpans).toHaveLength(result.lines.length);
-    expect(result.sourceSpans.some((span) => span?.startLine === 1)).toBe(true);
-    expect(result.sourceSpans.some((span) => span?.startLine === 3)).toBe(true);
   });
 });
 

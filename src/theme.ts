@@ -1,10 +1,10 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { DefaultTextStyle, MarkdownTheme } from "@earendil-works/pi-tui";
 import chalk from "chalk";
 import type { ThemeRegistration } from "shiki";
 import { APP_NAME } from "./constants";
+import type { DocumentStyles } from "./document";
 
 // Bundled themes (imported as JSON)
 import senzuDark from "./themes/senzu-dark.json";
@@ -24,7 +24,6 @@ export interface MarkdownColors {
   comment: string;
   code: string;
   codeBlockBackground: string;
-  commentBlockBackground: string;
   codeBlockBorder: string;
   quote: string;
   quoteBorder: string;
@@ -197,9 +196,6 @@ export function deriveMarkdownColors(theme: TextMateTheme): MarkdownColors {
   const codeBlockBackground = isDark
     ? lighten(background, 0.06)
     : darken(background, 0.04);
-  const commentBlockBackground = isDark
-    ? lighten(background, 0.03)
-    : darken(background, 0.02);
 
   // Search match highlighting colors
   const searchMatch = isDark ? "#b8860b" : "#c8a000";
@@ -218,7 +214,6 @@ export function deriveMarkdownColors(theme: TextMateTheme): MarkdownColors {
     comment,
     code,
     codeBlockBackground,
-    commentBlockBackground,
     codeBlockBorder: comment,
     quote,
     quoteBorder: comment,
@@ -315,61 +310,42 @@ export function resolveTheme(
   };
 }
 
-/**
- * Build a MarkdownTheme from resolved theme colors
- */
-export function buildMarkdownTheme(
+export function buildDocumentStyles(
   colors: MarkdownColors,
-  highlightCode?: (code: string, lang?: string) => string[],
-): MarkdownTheme & {
-  codeBlockPaddingTop: (text: string) => string;
-  codeBlockPaddingBottom: (text: string) => string;
-  commentBlock: (text: string) => string;
-  commentBlockPaddingTop: (text: string) => string;
-  commentBlockPaddingBottom: (text: string) => string;
-} {
-  const codeBlockPadding = chalk
-    .bgHex(colors.codeBlockBackground)
-    .hex(colors.background);
-
-  const commentBlockPadding = chalk
-    .bgHex(colors.commentBlockBackground)
-    .hex(colors.background);
-
+  highlightCode: (code: string, lang?: string) => string[],
+): DocumentStyles {
   return {
-    heading: chalk.hex(colors.heading),
-    link: chalk.hex(colors.link),
-    linkUrl: chalk.hex(colors.linkUrl),
-    code: chalk.hex(colors.code),
+    markdown: {
+      heading: chalk.hex(colors.heading),
+      link: chalk.hex(colors.link),
+      linkUrl: chalk.hex(colors.linkUrl),
+      code: chalk.hex(colors.code),
+      codeBlock: chalk.hex(colors.foreground).bgHex(colors.codeBlockBackground),
+      codeBlockBorder: chalk.hex(colors.codeBlockBorder),
+      quote: chalk.hex(colors.quote),
+      quoteBorder: chalk.hex(colors.quoteBorder),
+      hr: chalk.hex(colors.hr),
+      listBullet: chalk.hex(colors.listBullet),
+      bold: chalk.bold,
+      italic: chalk.italic,
+      strikethrough: chalk.strikethrough,
+      underline: chalk.underline,
+      highlightCode,
+    },
+    text: {
+      color: chalk.hex(colors.foreground),
+      bgColor: chalk.bgHex(colors.background),
+    },
     codeBlock: chalk.hex(colors.foreground).bgHex(colors.codeBlockBackground),
-    codeBlockBorder: chalk.hex(colors.codeBlockBorder),
-    codeBlockPaddingTop: codeBlockPadding,
-    codeBlockPaddingBottom: codeBlockPadding,
-    commentBlock: chalk
-      .hex(colors.comment)
-      .bgHex(colors.commentBlockBackground),
-    commentBlockPaddingTop: commentBlockPadding,
-    commentBlockPaddingBottom: commentBlockPadding,
-    quote: chalk.hex(colors.quote),
-    quoteBorder: chalk.hex(colors.quoteBorder),
-    hr: chalk.hex(colors.hr),
-    listBullet: chalk.hex(colors.listBullet),
-    bold: chalk.bold,
-    italic: chalk.italic,
-    strikethrough: chalk.strikethrough,
-    underline: chalk.underline,
-    highlightCode,
-  };
-}
-
-/**
- * Build default text style from resolved theme colors
- */
-export function buildDefaultTextStyle(
-  colors: MarkdownColors,
-): DefaultTextStyle {
-  return {
-    color: chalk.hex(colors.foreground),
-    bgColor: chalk.bgHex(colors.background),
+    codeBlockPadding: chalk
+      .bgHex(colors.codeBlockBackground)
+      .hex(colors.background),
+    mermaid: {
+      border: chalk.hex(colors.codeBlockBorder),
+      text: chalk.hex(colors.foreground),
+      edge: chalk.hex(colors.link),
+      edgeLabel: chalk.hex(colors.comment),
+      title: chalk.bold.hex(colors.heading),
+    },
   };
 }

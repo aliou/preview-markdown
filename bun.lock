@@ -22,9 +22,6 @@
       },
     },
   },
-  "patchedDependencies": {
-    "@earendil-works/pi-tui@0.84.0": "patches/@earendil-works%2Fpi-tui@0.84.0.patch",
-  },
   "packages": {
     "@aliou/biome-plugins": ["@aliou/biome-plugins@0.18.1", "", { "peerDependencies": { "@biomejs/biome": ">=2.6.0" } }, "sha512-0TC0dxaK8lYV7Gig20kAN49R9FRn5emdhVy2X+24sbzJYNPb0vbY9ZJMgfFJkM5oZKd8u0a949JLb0TJZkrSOg=="],
 

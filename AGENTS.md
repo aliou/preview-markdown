@@ -13,7 +13,7 @@ The app has two main modes, managed by a `Switcher` component that delegates ren
 - **Browser** (`src/browser.ts`): TUI file picker that scans a directory for `.md`/`.markdown`/`.mdx` files. Supports filtering, sorting, and recursive depth.
 - **Pager** (`src/pager.ts`): Scrollable viewer for a single markdown file. Handles search, line numbers, file watching, and opening `$EDITOR`.
 
-Both are built on top of `@earendil-works/pi-tui`, which provides the TUI framework and markdown rendering component. The project patches `pi-tui` to render code blocks with box-drawing borders instead of backtick markers, with wrapping inside the box (see `patches/` and the `pi-tui-patch` skill).
+Both are built on top of `@earendil-works/pi-tui`, which provides the TUI framework and markdown rendering component. `src/document.ts` splits a document into top-level blocks with pi-tui's `Marked` lexer, renders prose with pi-tui's `Markdown`, and draws code blocks and Mermaid diagrams itself, which keeps a source line for every rendered line.
 
 ### Key modules
 
@@ -41,7 +41,7 @@ Both are built on top of `@earendil-works/pi-tui`, which provides the TUI framew
 
 ### Dependencies
 
-- `@earendil-works/pi-tui` -- TUI framework and markdown rendering (patched)
+- `@earendil-works/pi-tui` -- TUI framework and markdown rendering
 - `shiki` -- syntax highlighting engine
 - `chalk` -- terminal colors
 - `grok-mermaid` -- Mermaid-to-Unicode box-art rendering
@@ -68,4 +68,3 @@ bun run build
 - The project uses Biome for linting and formatting.
 - Git hooks are managed by Lefthook (`lefthook.yml`). The dev shell installs the hook automatically.
 - Versioning uses changesets. See the `release` skill for the full release workflow.
-- When upgrading `@earendil-works/pi-tui`, follow the `pi-tui-patch` skill to regenerate the patch.

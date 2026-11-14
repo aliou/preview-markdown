@@ -18,28 +18,17 @@ import { Browser, type Entry, scanDirectory } from "./browser";
 import { parseArgs, printCompletion, printHelp, printVersion } from "./cli";
 import { type ColorScheme, detectColorScheme } from "./color-scheme";
 import { getThemeName, loadConfig, saveDefaultConfig } from "./config";
+import { type DocumentStyles, MarkdownDocument } from "./document";
 import { openInEditor } from "./editor";
 import { createGitStatusResolver, type GitStatusResolver } from "./git";
 import { createHighlightCodeFn, initSyntaxHighlighter } from "./highlighter";
 import { PMD_KEYBINDINGS } from "./keybindings";
 import { preprocessMdxWithSourceMap } from "./mdx";
-import { createMermaidMarkdownComponent, type MermaidTheme } from "./mermaid";
 import { Pager, type TocEntry } from "./pager";
-import {
-  createPreparedMarkdown,
-  mapPreparedSpan,
-  type SourceSpan,
-} from "./source-map";
-import {
-  buildDefaultTextStyle,
-  buildMarkdownTheme,
-  resolveTheme,
-} from "./theme";
+import { createPreparedMarkdown, type SourceSpan } from "./source-map";
+import { buildDocumentStyles, resolveTheme } from "./theme";
 import { ViewportController } from "./viewport";
 import { watchFile } from "./watcher";
-
-// Markdown content padding for a balanced reading layout
-const CONTENT_PADDING_X = 2;
 
 setKeybindings(
   new KeybindingsManager(
@@ -64,34 +53,6 @@ async function readStdin(): Promise<string> {
     chunks.push(chunk);
   }
   return Buffer.concat(chunks).toString("utf8");
-}
-
-function extractTocEntries(content: string): TocEntry[] {
-  const entries: TocEntry[] = [];
-  let inFence = false;
-
-  content.split(/\r?\n/).forEach((line, index) => {
-    if (/^\s*(```|~~~)/.test(line)) {
-      inFence = !inFence;
-      return;
-    }
-    if (inFence) return;
-
-    const match = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
-    if (!match) return;
-
-    const marker = match[1];
-    const title = match[2];
-    if (!marker || !title) return;
-
-    entries.push({
-      level: marker.length,
-      title: title.trim(),
-      line: index + 1,
-    });
-  });
-
-  return entries;
 }
 
 // Delegates render/input/invalidate to whichever component is currently active.
@@ -205,52 +166,30 @@ class StatusBar implements Component {
   }
 }
 
-async function buildContentComponent(
-  document: ReturnType<typeof createPreparedMarkdown>,
-  markdownTheme: ReturnType<typeof buildMarkdownTheme>,
-  defaultTextStyle: ReturnType<typeof buildDefaultTextStyle>,
-  mermaidTheme: MermaidTheme,
-): Promise<Component> {
-  return createMermaidMarkdownComponent(
-    document,
-    markdownTheme,
-    defaultTextStyle,
-    mermaidTheme,
-    CONTENT_PADDING_X,
-  );
-}
-
 interface Document {
-  component: Component;
+  component: MarkdownDocument;
   tocEntries: TocEntry[];
   gitStatusForSpan?: GitStatusResolver;
   sourceLineForSpan: (span: SourceSpan | null) => number | null;
 }
 
-async function buildDocument(
+function buildDocument(
   content: string,
   filePath: string | null,
-  markdownTheme: ReturnType<typeof buildMarkdownTheme>,
-  defaultTextStyle: ReturnType<typeof buildDefaultTextStyle>,
-  mermaidTheme: MermaidTheme,
-): Promise<Document> {
+  styles: DocumentStyles,
+): Document {
   let prepared = createPreparedMarkdown(content);
   if (filePath?.endsWith(".mdx")) {
     prepared = preprocessMdxWithSourceMap(prepared);
   }
+  const component = new MarkdownDocument(prepared, styles);
   return {
-    component: await buildContentComponent(
-      prepared,
-      markdownTheme,
-      defaultTextStyle,
-      mermaidTheme,
-    ),
-    tocEntries: extractTocEntries(prepared.content),
+    component,
+    tocEntries: component.headings,
     gitStatusForSpan: filePath
-      ? createGitStatusResolver(filePath, content, prepared)
+      ? createGitStatusResolver(filePath, content)
       : undefined,
-    sourceLineForSpan: (span) =>
-      mapPreparedSpan(prepared, span)?.startLine ?? null,
+    sourceLineForSpan: (span) => span?.startLine ?? null,
   };
 }
 
@@ -348,8 +287,7 @@ async function main(): Promise<void> {
 
   // Theme components — mutable so color scheme changes can update them
   let highlightCode = createHighlightCodeFn(currentTheme.name);
-  let markdownTheme = buildMarkdownTheme(currentTheme.colors, highlightCode);
-  let defaultTextStyle = buildDefaultTextStyle(currentTheme.colors);
+  let documentStyles = buildDocumentStyles(currentTheme.colors, highlightCode);
 
   // Create terminal and TUI
   const terminal = new ProcessTerminal();
@@ -421,14 +359,6 @@ async function main(): Promise<void> {
     gitMovedColor: chalk.hex(currentTheme.colors.gitMoved),
   });
 
-  const buildMermaidTheme = (): MermaidTheme => ({
-    border: chalk.hex(currentTheme.colors.codeBlockBorder),
-    text: chalk.hex(currentTheme.colors.foreground),
-    edge: chalk.hex(currentTheme.colors.link),
-    edgeLabel: chalk.hex(currentTheme.colors.comment),
-    title: chalk.bold.hex(currentTheme.colors.heading),
-  });
-
   const buildStatusBarColors = () => ({
     bgColor: chalk.bgHex(currentTheme.colors.statusBarBg),
     fgColor: chalk.hex(currentTheme.colors.statusBarFg),
@@ -457,8 +387,7 @@ async function main(): Promise<void> {
     await initSyntaxHighlighter(currentTheme.textmate);
 
     highlightCode = createHighlightCodeFn(currentTheme.name);
-    markdownTheme = buildMarkdownTheme(currentTheme.colors, highlightCode);
-    defaultTextStyle = buildDefaultTextStyle(currentTheme.colors);
+    documentStyles = buildDocumentStyles(currentTheme.colors, highlightCode);
 
     // Update browser colors
     if (browser) {
@@ -488,13 +417,7 @@ async function main(): Promise<void> {
     const nextContent = activeRawContent;
     if (nextContent === null) return;
 
-    const document = await buildDocument(
-      nextContent,
-      activeFilePath,
-      markdownTheme,
-      defaultTextStyle,
-      buildMermaidTheme(),
-    );
+    const document = buildDocument(nextContent, activeFilePath, documentStyles);
     activeRawContent = nextContent;
     activePager.setContent(document.component, document.tocEntries);
     activePager.setGitStatusResolver(document.gitStatusForSpan);
@@ -536,12 +459,10 @@ async function main(): Promise<void> {
         void (async () => {
           try {
             const newContent = fs.readFileSync(pagerFilePath, "utf8");
-            const nextDocument = await buildDocument(
+            const nextDocument = buildDocument(
               newContent,
               pagerFilePath,
-              markdownTheme,
-              defaultTextStyle,
-              buildMermaidTheme(),
+              documentStyles,
             );
             activeRawContent = newContent;
             pager.setContent(nextDocument.component, nextDocument.tocEntries);
@@ -561,12 +482,10 @@ async function main(): Promise<void> {
         void (async () => {
           try {
             const newContent = fs.readFileSync(pagerFilePath, "utf8");
-            const nextDocument = await buildDocument(
+            const nextDocument = buildDocument(
               newContent,
               pagerFilePath,
-              markdownTheme,
-              defaultTextStyle,
-              buildMermaidTheme(),
+              documentStyles,
             );
             activeRawContent = newContent;
             pager.setContent(nextDocument.component, nextDocument.tocEntries);
@@ -612,12 +531,10 @@ async function main(): Promise<void> {
         return; // Can't read file — stay in browser
       }
 
-      const document = await buildDocument(
+      const document = buildDocument(
         fileContent,
         entry.absolutePath,
-        markdownTheme,
-        defaultTextStyle,
-        buildMermaidTheme(),
+        documentStyles,
       );
       const { pager, statusBar } = buildPager(
         document,
@@ -668,13 +585,7 @@ async function main(): Promise<void> {
   } else {
     viewport.setFallbackViewportHeight(Math.max(1, terminal.rows - 1));
     // viewer or stdin
-    const document = await buildDocument(
-      content,
-      filePath,
-      markdownTheme,
-      defaultTextStyle,
-      buildMermaidTheme(),
-    );
+    const document = buildDocument(content, filePath, documentStyles);
     const { pager, statusBar } = buildPager(
       document,
       filePath,
