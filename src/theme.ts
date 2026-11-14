@@ -10,7 +10,7 @@ import type { DocumentStyles } from "./document";
 import { FailedError } from "./failed-error";
 import type { GitLineStatus } from "./git";
 import { createCodeHighlighter } from "./highlighter";
-import senzuDark from "./themes/senzu-dark.json";
+import senzu from "./themes/senzu.json";
 import senzuLight from "./themes/senzu-light.json";
 
 chalk.level = 3;
@@ -43,9 +43,45 @@ export interface AppTheme {
   ui: UiStyles;
 }
 
+type BundledThemeFile = Omit<TextMateTheme, "name" | "type"> & {
+  type: string;
+};
+
+const DIFF_SCOPES = [
+  {
+    scope: ["markup.inserted.diff", "punctuation.definition.inserted.diff"],
+    color: "terminal.ansiBrightGreen",
+  },
+  {
+    scope: ["markup.deleted.diff", "punctuation.definition.deleted.diff"],
+    color: "terminal.ansiRed",
+  },
+  {
+    scope: [
+      "markup.changed.diff",
+      "meta.diff.range",
+      "punctuation.definition.changed.diff",
+    ],
+    color: "terminal.ansiBrightYellow",
+  },
+];
+
+function bundledTheme(name: string, file: BundledThemeFile): TextMateTheme {
+  const diffRules = DIFF_SCOPES.map(({ scope, color }) => ({
+    scope,
+    settings: { foreground: file.colors?.[color] },
+  }));
+  return {
+    ...file,
+    name,
+    type: file.type === "light" ? "light" : "dark",
+    tokenColors: [...(file.tokenColors ?? []), ...diffRules],
+  };
+}
+
 const DEFAULT_THEMES: Record<ColorScheme, TextMateTheme> = {
-  dark: { ...senzuDark, type: "dark" },
-  light: { ...senzuLight, type: "light" },
+  dark: bundledTheme("senzu-dark", senzu),
+  light: bundledTheme("senzu-light", senzuLight),
 };
 
 const BUNDLED_THEMES = new Map(
