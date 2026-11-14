@@ -1,17 +1,27 @@
-import { sliceByColumn, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import {
-  type Cls,
+  hyperlink,
+  sliceByColumn,
+  wrapTextWithAnsi,
+} from "@earendil-works/pi-tui";
+import {
   diagramKind,
   type MermaidArt,
+  type Role,
   render,
+  type Span,
   sourceBox,
-} from "grok-mermaid";
+} from "lovely-mermaid";
 
-export type MermaidTheme = Partial<Record<Cls, (text: string) => string>>;
+export type MermaidTheme = Partial<Record<Role, (text: string) => string>>;
+
+function styleSpan(span: Span, theme: MermaidTheme): string {
+  const text = theme[span.role]?.(span.text) ?? span.text;
+  return span.href ? hyperlink(text, span.href) : text;
+}
 
 function styledRows(art: MermaidArt, theme: MermaidTheme): string[] {
   return art.styled.map((row) =>
-    row.map((span) => theme[span.cls]?.(span.text) ?? span.text).join(""),
+    row.map((span) => styleSpan(span, theme)).join(""),
   );
 }
 

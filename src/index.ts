@@ -43,6 +43,7 @@ setKeybindings(
       "tui.altScreen.nextPrompt": [],
       "tui.altScreen.top": [],
       "tui.altScreen.bottom": [],
+      "tui.altScreen.search": [],
     },
   ),
 );

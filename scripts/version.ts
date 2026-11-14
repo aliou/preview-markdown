@@ -9,7 +9,7 @@
 import { $ } from "bun";
 
 // Run changeset version
-await $`bunx changeset version`;
+await $`bunx --bun changeset version`;
 
 // Get new version
 const pkg = await Bun.file("package.json").json();
