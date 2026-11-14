@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "build": "bun run scripts/build.ts",
     "changeset": "changeset",
-    "version": "bun run scripts/version.ts"
+    "version": "bun run scripts/version.ts",
+    "test": "bun test"
   },
   "devDependencies": {
     "@aliou/biome-plugins": "^0.18.1",
