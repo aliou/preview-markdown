@@ -3,7 +3,7 @@ pre-commit:
   commands:
     format:
       glob: "*.{ts,json,md}"
-      run: bun run format
+      run: pnpm run format
     typecheck:
       glob: "*.ts"
-      run: bun run typecheck
+      run: pnpm run typecheck

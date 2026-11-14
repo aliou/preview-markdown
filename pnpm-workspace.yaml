@@ -1,0 +1,7 @@
+allowBuilds:
+  esbuild: true
+permissions:
+  '@aliou/biome-plugins':
+    skills: false
+  tsdown:
+    skills: false

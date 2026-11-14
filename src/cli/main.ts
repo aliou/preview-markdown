@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { text as readStream } from "node:stream/consumers";
 import { stripVTControlCharacters } from "node:util";
 import packageJson from "../../package.json";
 import { runApp, type Target } from "../app";
@@ -55,7 +56,7 @@ function missingSource(source: string): Error {
 async function readTarget(options: ViewOptions): Promise<Target> {
   const { source } = options;
   if (source === "-" || (source === null && !process.stdin.isTTY)) {
-    return { kind: "stdin", markdown: await Bun.stdin.text() };
+    return { kind: "stdin", markdown: await readStream(process.stdin) };
   }
   const resolved = path.resolve(source ?? ".");
   const stat = fs.statSync(resolved, { throwIfNoEntry: false });

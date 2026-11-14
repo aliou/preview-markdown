@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
 import { ScrollView, Spacer } from "@earendil-works/pi-tui";
+import { describe, expect, test } from "vitest";
 import type { GitStatusResolver } from "../src/git";
 import { installKeybindings } from "../src/keybindings";
 import { Pager, type PagerContent } from "../src/pager";
@@ -82,7 +82,7 @@ describe("Pager git gutter", () => {
     const widths: number[] = [];
     const pager = pagerFor(contentOf(["content"], widths), () => "added");
 
-    expect(pager.render(10)[0]).toStartWith("[added:▎]content");
+    expect(pager.render(10)[0]).toMatch(/^\[added:▎\]content/);
     expect(widths).toEqual([9]);
   });
 

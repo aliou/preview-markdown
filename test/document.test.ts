@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { type DocumentStyles, MarkdownDocument } from "../src/document";
 import { preprocessMdxWithSourceMap } from "../src/mdx";
 import { createPreparedMarkdown, type SourceSpan } from "../src/source-map";

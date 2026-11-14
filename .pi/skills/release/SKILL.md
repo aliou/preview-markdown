@@ -19,7 +19,7 @@ This project uses [changesets](https://github.com/changesets/changesets) for ver
 ### 1. Create a changeset
 
 ```bash
-nix-shell --run "bun run changeset"
+nix-shell --run "pnpm changeset"
 ```
 
 This prompts for:
@@ -40,8 +40,8 @@ git push origin main
 
 The `version.yml` workflow:
 - Detects changeset files in `.changeset/`
-- Runs `bun run version` which:
-  - Bumps version in `package.json`
+- Runs `pnpm run version` which:
+  - Bumps version in `package.json` and `flake.nix`
   - Updates `CHANGELOG.md`
   - Deletes the changeset files
 - Creates a PR (e.g., `release/v0.2.0`)
@@ -49,7 +49,7 @@ The `version.yml` workflow:
 ### 4. Merge the Release PR
 
 When merged, CI:
-- Builds binaries (`dist/pmd-darwin-arm64`, `dist/pmd-linux-arm64`)
+- Builds and smoke-tests each binary on its own runner (`dist/pmd-darwin-arm64`, `dist/pmd-linux-arm64`, `dist/pmd-linux-x64`)
 - Computes and updates flake.nix hashes
 - Creates git tag (e.g., `v0.2.0`)
 - Creates GitHub release with binaries attached
@@ -74,6 +74,7 @@ To force a release for the current version without changesets:
 
 - `.changeset/config.json` - Changeset configuration
 - `.github/workflows/version.yml` - Release automation
+- `.github/workflows/build.yml` - Per-platform binary builds
 - `scripts/version.ts` - Version script run by CI
 - `CHANGELOG.md` - Auto-updated changelog
 
@@ -88,5 +89,5 @@ To force a release for the current version without changesets:
 - Bump version again with a new changeset
 
 ### Build fails
-- Check that `bun run build` works locally
-- Verify nix is available in CI (uses `cachix/install-nix-action`)
+- Check that `pnpm build` works locally
+- Check the failing runner in the Build workflow; each platform builds on its own runner

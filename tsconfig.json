@@ -6,7 +6,7 @@
     "target": "ESNext",
     "module": "ESNext",
     "moduleDetection": "force",
-    "types": ["bun"],
+    "types": ["node"],
     "jsx": "react-jsx",
     "allowJs": true,
 

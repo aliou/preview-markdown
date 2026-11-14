@@ -1,13 +1,13 @@
 # pmd (preview-markdown)
 
-Terminal markdown pager and directory browser, written in TypeScript for Bun and shipped as single binaries built with `bun build --compile`. Users run released binaries through Homebrew and Nix, so the CLI surface (commands, flags, exit codes, piped output) is a public interface.
+Terminal markdown pager and directory browser, written in TypeScript for Node.js (version pinned in `.node-version`) and shipped as single executables built with tsdown's `exe` option (Node.js SEA). Users run released binaries through Homebrew and Nix, so the CLI surface (commands, flags, exit codes, piped output) is a public interface.
 
 ## Commands
 
-- `bun run src/index.ts <args>` runs pmd from source.
-- `bun run lint`, `bun run typecheck`, and `bun test` must pass before committing. Lefthook runs the formatter and type check on commit.
-- `bun run schema` regenerates `schema.json` from the zod config schema in `src/config.ts`; a test fails when they drift.
-- `bun run build` compiles the release binaries into `dist/`.
+- `pnpm start <args>` runs pmd from source with tsx.
+- `pnpm lint`, `pnpm typecheck`, and `pnpm test` must pass before committing. Lefthook runs the formatter and type check on commit.
+- `pnpm schema` regenerates `schema.json` from the zod config schema in `src/config.ts`; a test fails when they drift.
+- `pnpm build` compiles the binary for the current platform into `dist/`. CI builds each release binary on its own platform (`.github/workflows/build.yml`).
 
 ## Conventions
 

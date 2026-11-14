@@ -1,7 +1,7 @@
-#!/usr/bin/env bun
+import * as fs from "node:fs";
 import { configSchemaJson } from "../src/config";
 
-await Bun.write(
+fs.writeFileSync(
   "schema.json",
   `${JSON.stringify(configSchemaJson(), null, 2)}\n`,
 );

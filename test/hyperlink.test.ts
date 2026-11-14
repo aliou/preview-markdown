@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vitest";
 import { wrapUrlsHyperlinks } from "../src/hyperlink";
 
 const OSC = (url: string) => `\u001b]8;;${url}\u001b\\${url}\u001b]8;;\u001b\\`;

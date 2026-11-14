@@ -1,12 +1,13 @@
-import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { afterEach, describe, expect, test } from "vitest";
 import packageJson from "../package.json";
 import { configSchemaJson } from "../src/config";
 
-const ENTRY = path.join(import.meta.dir, "..", "src", "index.ts");
+const ENTRY = path.join(import.meta.dirname, "..", "src", "index.ts");
+const TSX = import.meta.resolve("tsx");
 const temporaryDirectories: string[] = [];
 
 afterEach(() => {
@@ -32,17 +33,21 @@ function pmd(
   options: { cwd?: string; input?: string; env?: Record<string, string> } = {},
 ): Run {
   const cwd = options.cwd ?? tempDirectory();
-  const result = spawnSync(process.execPath, ["run", ENTRY, ...args], {
-    cwd,
-    input: options.input ?? "",
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      XDG_CONFIG_HOME: path.join(cwd, "config"),
-      NO_COLOR: "1",
-      ...options.env,
+  const result = spawnSync(
+    process.execPath,
+    ["--import", TSX, ENTRY, ...args],
+    {
+      cwd,
+      input: options.input ?? "",
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        XDG_CONFIG_HOME: path.join(cwd, "config"),
+        NO_COLOR: "1",
+        ...options.env,
+      },
     },
-  });
+  );
   return {
     status: result.status,
     stdout: result.stdout,
@@ -58,8 +63,8 @@ describe("help and version", () => {
   test("help flag wins in any position and shows the command's help", () => {
     const root = pmd(["README.md", "--width", "nope", "-h"]);
     expect(root.status).toBe(0);
-    expect(root.stdout).toStartWith(
-      "Render markdown in the terminal.\n\nExamples:",
+    expect(root.stdout).toMatch(
+      /^Render markdown in the terminal\.\n\nExamples:/,
     );
     expect(root.stdout).toContain(
       "completion  Print a shell completion script",
@@ -254,14 +259,14 @@ describe("completion", () => {
       "help",
       "notes.md",
     ]);
-    expect(complete(["pmd", "config", ""])).toStartWith("init\npath\n");
+    expect(complete(["pmd", "config", ""])).toMatch(/^init\npath\n/);
     expect(complete(["pmd", "completion", "f"])).toBe("fish\n");
   });
 
   test("the deprecated --completion flag still works and warns", () => {
     const run = pmd(["--completion", "zsh"]);
     expect(run.status).toBe(0);
-    expect(run.stdout).toStartWith("#compdef pmd");
+    expect(run.stdout).toMatch(/^#compdef pmd/);
     expect(run.stderr).toBe(
       'pmd: --completion is deprecated, use "pmd completion zsh"\n',
     );
@@ -304,7 +309,10 @@ describe("config", () => {
 
   test("schema.json matches the config schema", () => {
     const committed = JSON.parse(
-      fs.readFileSync(path.join(import.meta.dir, "..", "schema.json"), "utf8"),
+      fs.readFileSync(
+        path.join(import.meta.dirname, "..", "schema.json"),
+        "utf8",
+      ),
     );
     expect(committed).toEqual(configSchemaJson());
   });

@@ -1,0 +1,66 @@
+name: Build
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to build
+        type: string
+        default: ""
+
+jobs:
+  build:
+    name: Build ${{ matrix.artifact }}
+    # Each binary is built on its own platform: the V8 code cache only loads
+    # where it was generated, and macOS binaries must be signed on macOS.
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - runner: macos-latest
+            artifact: pmd-darwin-arm64
+          - runner: ubuntu-24.04
+            artifact: pmd-linux-x64
+          - runner: ubuntu-24.04-arm
+            artifact: pmd-linux-arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Verify the binary
+        run: |
+          set -euo pipefail
+          pmd="dist/${{ matrix.artifact }}"
+          "$pmd" --version
+          "$pmd" --help > /dev/null
+          "$pmd" README.md | grep -q "preview-markdown"
+          printf '# stdin\n\n```ts\nconst x = 1;\n```\n' | "$pmd" - | grep -q "const x = 1;"
+          status=0
+          "$pmd" --no-such-flag 2> /dev/null || status=$?
+          test "$status" -eq 2
+
+      - name: Upload the binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+          if-no-files-found: error
