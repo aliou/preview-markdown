@@ -15,6 +15,7 @@ This project is an experiment in building a complete tool using AI coding agents
 - Edit the file in `$EDITOR` at the current line with `e`, with a notice when the file changes on disk
 - Git status gutter for files in a Git worktree
 - Light and dark mode, detected from the terminal background or forced
+- Plain text output when piped, so `pmd` works in scripts
 
 ## Installation
 
@@ -80,78 +81,42 @@ A home-manager module is also available:
 ## Usage
 
 ```bash
-pmd                     # Browse markdown files in current directory
-pmd docs/               # Browse markdown files in docs/
-pmd docs/ --depth 3     # Browse recursively up to 3 levels deep
-pmd README.md           # Open a file directly in the pager
-cat FILE.md | pmd       # Read from stdin
+pmd                     # Browse markdown files in the current directory
+pmd docs/ --depth 3     # Browse up to three levels deep
+pmd README.md           # Open a file in the pager
+cat CHANGELOG.md | pmd  # Read from stdin (or: pmd -)
+pmd README.md | less    # Print plain text when stdout is not a terminal
 ```
 
-### Options
+`pmd --help` lists the flags and commands, and `pmd help <command>` shows the details of one command. Press `?` inside pmd, or run `pmd help keys`, for the keyboard shortcuts.
 
-```
--d, --depth N      Directory browser recursion depth (default: 1, includes direct subdirectories)
--l, --line-numbers Show line numbers (pager only)
--w, --width N      Word-wrap at width (0 to disable)
-    --light        Force light mode
-    --dark         Force dark mode
-```
+pmd exits with 0 on success, 1 when something fails (for example a missing file), and 2 for a usage error such as an unknown flag.
 
-### Browser navigation
+### Shell completion
 
-Browsing supports `.md`, `.markdown`, and `.mdx` files.
-
-| Key          | Action               |
-| ------------ | -------------------- |
-| `j` / `Down` | Move down            |
-| `k` / `Up`   | Move up              |
-| `f` / `PgDn` | Page down            |
-| `b` / `PgUp` | Page up              |
-| `g` / `Home` | Go to top            |
-| `G` / `End`  | Go to bottom         |
-| `/`          | Filter files by name |
-| `Esc`        | Clear filter         |
-| `s` / `S`    | Cycle sort mode      |
-| `r` / `R`    | Reverse sort order   |
-| `Enter`      | Open selected file   |
-| `?`          | Show help            |
-| `q` / `Esc`  | Quit                 |
-
-### Pager navigation
-
-| Key                    | Action                                       |
-| ---------------------- | -------------------------------------------- |
-| `j` / `Down`           | Scroll down                                  |
-| `k` / `Up`             | Scroll up                                    |
-| `d`                    | Half page down                               |
-| `u`                    | Half page up                                 |
-| `f` / `Space` / `PgDn` | Page down                                    |
-| `b` / `PgUp`           | Page up                                      |
-| `g` / `Home`           | Go to top                                    |
-| `G` / `End`            | Go to bottom                                 |
-| `/`                    | Search                                       |
-| `n` / `N`              | Next/previous match                          |
-| `e`                    | Edit in $EDITOR                              |
-| `r` / `R`              | Reload file                                  |
-| `Ctrl+Z`               | Suspend pmd                                  |
-| `?`                    | Show help                                    |
-| `q` / `Esc`            | Quit (returns to browser if opened from one) |
-
-### Shell Completions
+Load completion in the current shell:
 
 ```bash
-pmd --completion bash > /etc/bash_completion.d/pmd
-pmd --completion zsh > ~/.zsh/completions/_pmd
-pmd --completion fish > ~/.config/fish/completions/pmd.fish
+source <(pmd completion zsh)   # zsh
+source <(pmd completion bash)  # bash
+pmd completion fish | source   # fish
+```
+
+Install it permanently:
+
+```bash
+pmd completion zsh > "${fpath[1]}/_pmd"
+pmd completion bash > ~/.local/share/bash-completion/completions/pmd
+pmd completion fish > ~/.config/fish/completions/pmd.fish
 ```
 
 ## Configuration
 
-Create a config file with `pmd --init-config` or `pmd --config`, or manually at `~/.config/pmd/config.json`.
+`pmd config init` writes the default config to `~/.config/pmd/config.json` (or `$XDG_CONFIG_HOME/pmd/config.json`). A `.pmd.json` in the current directory takes precedence over it; `pmd config path` prints the file pmd reads. The config is validated against `schema.json`, and `.pmd.json` in this repository is an example.
 
-Local config is also supported via `.pmd.json` in the current directory and takes precedence over global config. See `.pmd.json` in this repo for an example.
+`theme` names a bundled theme (`senzu-dark`, `senzu-light`) or a TextMate theme file in `~/.config/pmd/themes/<name>.json`, either for both modes or as a `{ "dark": ..., "light": ... }` pair.
 
-When viewing a file in a Git worktree, pmd automatically shows a Git status gutter. It compares the working tree with `HEAD`; green marks additions, yellow modifications, red deletion boundaries, and blue moved lines.
+When viewing a file in a Git worktree, pmd shows a Git status gutter. It compares the working tree with `HEAD`; green marks additions, yellow modifications, red deletion boundaries, and blue moved lines.
 
 ## License
 
