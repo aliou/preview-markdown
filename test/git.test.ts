@@ -4,9 +4,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
-import { createGitStatusResolver } from "../src/git.js";
-import { Pager } from "../src/pager.js";
-import { createPreparedMarkdown } from "../src/source-map.js";
+import { createGitStatusResolver } from "../src/git";
+import { Pager } from "../src/pager";
+import { createPreparedMarkdown } from "../src/source-map";
 
 const temporaryDirectories: string[] = [];
 

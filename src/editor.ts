@@ -30,12 +30,10 @@ function findEditor(): string | null {
   const editors = ["vim", "nvim", "nano", "vi"];
 
   for (const editor of editors) {
-    try {
-      const result = spawnSync("which", [editor], { stdio: "pipe" });
-      if (result.status === 0) {
-        return editor;
-      }
-    } catch {}
+    const result = spawnSync("which", [editor], { stdio: "pipe" });
+    if (result.status === 0) {
+      return editor;
+    }
   }
 
   return null;

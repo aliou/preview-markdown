@@ -1,8 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Component } from "@earendil-works/pi-tui";
-import { pmdMatches } from "./keybindings.js";
-import type { ViewportController } from "./viewport.js";
+import { pmdMatches } from "./keybindings";
+import type { ViewportController } from "./viewport";
 
 const MD_EXTENSIONS = new Set([".md", ".markdown", ".mdx"]);
 
@@ -101,12 +101,8 @@ export function scanDirectory(baseDir: string, maxDepth: number): Entry[] {
       // Directories are followed (cycle guard above handles loops).
       // Files are included if they have a markdown extension.
       if (item.isSymbolicLink()) {
-        let stat: fs.Stats;
-        try {
-          stat = fs.statSync(fullPath);
-        } catch {
-          continue; // Broken symlink — skip.
-        }
+        const stat = fs.statSync(fullPath, { throwIfNoEntry: false });
+        if (!stat) continue;
         if (stat.isDirectory()) {
           recurse(fullPath, currentDepth + 1);
         } else if (stat.isFile()) {
@@ -128,20 +124,12 @@ export function scanDirectory(baseDir: string, maxDepth: number): Entry[] {
       } else if (item.isFile()) {
         const ext = path.extname(item.name).toLowerCase();
         if (MD_EXTENSIONS.has(ext)) {
-          let createdAt = new Date(0);
-          let updatedAt = new Date(0);
-          try {
-            const stat = fs.statSync(fullPath);
-            createdAt = stat.birthtime;
-            updatedAt = stat.mtime;
-          } catch {
-            // Leave timestamps as epoch on error.
-          }
+          const stat = fs.statSync(fullPath, { throwIfNoEntry: false });
           entries.push({
             absolutePath: fullPath,
             relativePath: path.relative(baseDir, fullPath),
-            createdAt,
-            updatedAt,
+            createdAt: stat?.birthtime ?? new Date(0),
+            updatedAt: stat?.mtime ?? new Date(0),
           });
         }
       }

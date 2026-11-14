@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import {
   createMermaidMarkdownComponent,
   preprocessMermaidWithSourceMap,
-} from "../src/mermaid.js";
-import { createPreparedMarkdown } from "../src/source-map.js";
+} from "../src/mermaid";
+import { createPreparedMarkdown } from "../src/source-map";
 
 const plainMarkdownTheme = {
   heading: (text: string) => text,

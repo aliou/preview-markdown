@@ -2,7 +2,7 @@ import {
   createPreparedMarkdown,
   type PreparedMarkdown,
   type SourceSpan,
-} from "./source-map.js";
+} from "./source-map";
 
 /**
  * Preprocess MDX content to make it renderable as Markdown.

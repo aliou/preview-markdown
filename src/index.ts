@@ -14,32 +14,29 @@ import {
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import chalk from "chalk";
-import { Browser, type Entry, scanDirectory } from "./browser.js";
-import { parseArgs, printCompletion, printHelp, printVersion } from "./cli.js";
-import { type ColorScheme, detectColorScheme } from "./color-scheme.js";
-import { getThemeName, loadConfig, saveDefaultConfig } from "./config.js";
-import { openInEditor } from "./editor.js";
-import { createGitStatusResolver, type GitStatusResolver } from "./git.js";
-import { createHighlightCodeFn, initSyntaxHighlighter } from "./highlighter.js";
-import { PMD_KEYBINDINGS } from "./keybindings.js";
-import { preprocessMdxWithSourceMap } from "./mdx.js";
-import {
-  createMermaidMarkdownComponent,
-  type MermaidTheme,
-} from "./mermaid.js";
-import { Pager, type TocEntry } from "./pager.js";
+import { Browser, type Entry, scanDirectory } from "./browser";
+import { parseArgs, printCompletion, printHelp, printVersion } from "./cli";
+import { type ColorScheme, detectColorScheme } from "./color-scheme";
+import { getThemeName, loadConfig, saveDefaultConfig } from "./config";
+import { openInEditor } from "./editor";
+import { createGitStatusResolver, type GitStatusResolver } from "./git";
+import { createHighlightCodeFn, initSyntaxHighlighter } from "./highlighter";
+import { PMD_KEYBINDINGS } from "./keybindings";
+import { preprocessMdxWithSourceMap } from "./mdx";
+import { createMermaidMarkdownComponent, type MermaidTheme } from "./mermaid";
+import { Pager, type TocEntry } from "./pager";
 import {
   createPreparedMarkdown,
   mapPreparedSpan,
   type SourceSpan,
-} from "./source-map.js";
+} from "./source-map";
 import {
   buildDefaultTextStyle,
   buildMarkdownTheme,
   resolveTheme,
-} from "./theme.js";
-import { ViewportController } from "./viewport.js";
-import { watchFile } from "./watcher.js";
+} from "./theme";
+import { ViewportController } from "./viewport";
+import { watchFile } from "./watcher";
 
 // Markdown content padding for a balanced reading layout
 const CONTENT_PADDING_X = 2;
@@ -257,6 +254,8 @@ async function buildDocument(
   };
 }
 
+type AppMode = "browser" | "viewer" | "stdin";
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
 
@@ -283,7 +282,6 @@ async function main(): Promise<void> {
   }
 
   // Determine mode
-  type AppMode = "browser" | "viewer" | "stdin";
   let mode: AppMode;
   let baseDir = "";
 
@@ -552,7 +550,7 @@ async function main(): Promise<void> {
             pager.setFileChanged(false);
             tui.requestRender(true);
           } catch {
-            // File temporarily unavailable during save
+            return;
           }
         })();
       },
@@ -575,7 +573,7 @@ async function main(): Promise<void> {
             pager.setGitStatusResolver(nextDocument.gitStatusForSpan);
             pager.setSourceLineResolver(nextDocument.sourceLineForSpan);
           } catch {
-            // Ignore read errors after edit
+            pager.setFileChanged(true);
           }
           tui.start();
           tui.requestRender(true);

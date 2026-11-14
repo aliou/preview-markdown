@@ -18,7 +18,7 @@ Both are built on top of `@earendil-works/pi-tui`, which provides the TUI framew
 ### Key modules
 
 | File | Purpose |
-|------|---------|
+| --- | --- |
 | `src/index.ts` | Entry point. CLI parsing, mode selection, TUI setup, color scheme change handling |
 | `src/browser.ts` | Directory browser component |
 | `src/pager.ts` | Scrollable pager component |

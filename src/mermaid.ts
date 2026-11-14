@@ -17,7 +17,7 @@ import {
   createPreparedMarkdown,
   type PreparedMarkdown,
   type SourceSpan,
-} from "./source-map.js";
+} from "./source-map";
 
 export type MermaidTheme = Partial<Record<Cls, (text: string) => string>>;
 
@@ -102,11 +102,7 @@ function isFenceClose(line: FenceLine, fence: ActiveFence): boolean {
 
 function isMermaidFenceOpen(line: string): ActiveFence | null {
   const fenceLine = parseFenceLine(line);
-  if (
-    !fenceLine ||
-    fenceLine.markerChar !== "`" ||
-    !line.startsWith(fenceLine.marker)
-  ) {
+  if (fenceLine?.markerChar !== "`" || !line.startsWith(fenceLine.marker)) {
     return null;
   }
   return /^mermaid\s*$/.test(fenceLine.rest)

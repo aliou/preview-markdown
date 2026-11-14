@@ -102,41 +102,41 @@ cat FILE.md | pmd       # Read from stdin
 
 Browsing supports `.md`, `.markdown`, and `.mdx` files.
 
-| Key | Action |
-|-----|--------|
-| `j` / `Down` | Move down |
-| `k` / `Up` | Move up |
-| `f` / `PgDn` | Page down |
-| `b` / `PgUp` | Page up |
-| `g` / `Home` | Go to top |
-| `G` / `End` | Go to bottom |
-| `/` | Filter files by name |
-| `Esc` | Clear filter |
-| `s` / `S` | Cycle sort mode |
-| `r` / `R` | Reverse sort order |
-| `Enter` | Open selected file |
-| `?` | Show help |
-| `q` / `Esc` | Quit |
+| Key          | Action               |
+| ------------ | -------------------- |
+| `j` / `Down` | Move down            |
+| `k` / `Up`   | Move up              |
+| `f` / `PgDn` | Page down            |
+| `b` / `PgUp` | Page up              |
+| `g` / `Home` | Go to top            |
+| `G` / `End`  | Go to bottom         |
+| `/`          | Filter files by name |
+| `Esc`        | Clear filter         |
+| `s` / `S`    | Cycle sort mode      |
+| `r` / `R`    | Reverse sort order   |
+| `Enter`      | Open selected file   |
+| `?`          | Show help            |
+| `q` / `Esc`  | Quit                 |
 
 ### Pager navigation
 
-| Key | Action |
-|-----|--------|
-| `j` / `Down` | Scroll down |
-| `k` / `Up` | Scroll up |
-| `d` | Half page down |
-| `u` | Half page up |
-| `f` / `Space` / `PgDn` | Page down |
-| `b` / `PgUp` | Page up |
-| `g` / `Home` | Go to top |
-| `G` / `End` | Go to bottom |
-| `/` | Search |
-| `n` / `N` | Next/previous match |
-| `e` | Edit in $EDITOR |
-| `r` / `R` | Reload file |
-| `Ctrl+Z` | Suspend pmd |
-| `?` | Show help |
-| `q` / `Esc` | Quit (returns to browser if opened from one) |
+| Key                    | Action                                       |
+| ---------------------- | -------------------------------------------- |
+| `j` / `Down`           | Scroll down                                  |
+| `k` / `Up`             | Scroll up                                    |
+| `d`                    | Half page down                               |
+| `u`                    | Half page up                                 |
+| `f` / `Space` / `PgDn` | Page down                                    |
+| `b` / `PgUp`           | Page up                                      |
+| `g` / `Home`           | Go to top                                    |
+| `G` / `End`            | Go to bottom                                 |
+| `/`                    | Search                                       |
+| `n` / `N`              | Next/previous match                          |
+| `e`                    | Edit in $EDITOR                              |
+| `r` / `R`              | Reload file                                  |
+| `Ctrl+Z`               | Suspend pmd                                  |
+| `?`                    | Show help                                    |
+| `q` / `Esc`            | Quit (returns to browser if opened from one) |
 
 ### Shell Completions
 

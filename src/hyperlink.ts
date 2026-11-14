@@ -1,4 +1,4 @@
-import { extractAnsiCode } from "@earendil-works/pi-tui/dist/utils.js";
+import { extractAnsiCode } from "@earendil-works/pi-tui/dist/utils";
 
 // Match URLs with an explicit scheme. Bare "www." hosts are intentionally
 // excluded: marked's GFM autolinking expands them to http://... in link
@@ -7,7 +7,8 @@ import { extractAnsiCode } from "@earendil-works/pi-tui/dist/utils.js";
 // swallow an ANSI/OSC sequence. The word-boundary check is handled in the walk
 // (via prevVisible) instead of a regex lookbehind, so an SGR code such as
 // "\x1b[36m" ending in an alphanumeric does not block a URL that follows it.
-const URL_REGEX = /(?:https?|ftp):\/\/[^\s<>"'\x1b`]+|mailto:[^\s<>"'\x1b`]+/iy;
+const URL_REGEX =
+  /(?:https?|ftp):\/\/[^\s<>"'`\p{Cc}]+|mailto:[^\s<>"'`\p{Cc}]+/iuy;
 
 // Trailing characters that commonly hug a URL but are not part of it.
 const SIMPLE_TRAILING = ".,;:!?]}'\"";

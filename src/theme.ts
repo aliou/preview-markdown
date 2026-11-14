@@ -3,31 +3,14 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { DefaultTextStyle, MarkdownTheme } from "@earendil-works/pi-tui";
 import chalk from "chalk";
-import { APP_NAME } from "./constants.js";
+import type { ThemeRegistration } from "shiki";
+import { APP_NAME } from "./constants";
 
 // Bundled themes (imported as JSON)
 import senzuDark from "./themes/senzu-dark.json";
 import senzuLight from "./themes/senzu-light.json";
 
-/**
- * TextMate theme structure (subset we care about)
- */
-export interface TextMateTheme {
-  name: string;
-  type?: "dark" | "light";
-  colors?: {
-    "editor.background"?: string;
-    "editor.foreground"?: string;
-    [key: string]: string | undefined;
-  };
-  tokenColors: Array<{
-    scope?: string | string[];
-    settings: {
-      foreground?: string;
-      fontStyle?: string;
-    };
-  }>;
-}
+export type TextMateTheme = ThemeRegistration & { name: string };
 
 /**
  * Resolved colors for markdown rendering
@@ -76,8 +59,8 @@ export interface ResolvedTheme {
 
 // Bundled themes registry
 const BUNDLED_THEMES: Record<string, TextMateTheme> = {
-  "senzu-dark": senzuDark as unknown as TextMateTheme,
-  "senzu-light": senzuLight as unknown as TextMateTheme,
+  "senzu-dark": { ...senzuDark, type: "dark" },
+  "senzu-light": { ...senzuLight, type: "light" },
 };
 
 const DEFAULT_DARK_THEME = "senzu-dark";
@@ -105,7 +88,7 @@ function loadThemeFromFile(themeName: string): TextMateTheme | null {
       return JSON.parse(content) as TextMateTheme;
     }
   } catch {
-    // Fall through to return null
+    return null;
   }
 
   return null;
@@ -147,7 +130,7 @@ function findColorByScope(
   ...scopes: string[]
 ): string | null {
   for (const scope of scopes) {
-    for (const token of theme.tokenColors) {
+    for (const token of theme.tokenColors ?? []) {
       const tokenScopes = Array.isArray(token.scope)
         ? token.scope
         : token.scope
@@ -285,7 +268,7 @@ function darken(hex: string, amount: number): string {
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  if (!result || !result[1] || !result[2] || !result[3]) {
+  if (!result?.[1] || !result[2] || !result[3]) {
     return null;
   }
   return {

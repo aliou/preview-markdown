@@ -37,7 +37,7 @@ export function watchFile(filePath: string, onChange: () => void): FileWatcher {
       try {
         watcher = fs.watch(filePath, handleChange);
       } catch {
-        // File might not exist or not be watchable
+        return;
       }
     },
     stop() {

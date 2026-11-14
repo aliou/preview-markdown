@@ -5,12 +5,8 @@ export type ColorScheme = "light" | "dark";
 const DEBUG_LOG = "/tmp/pmd-debug.log";
 
 function log(msg: string): void {
-  try {
-    const timestamp = new Date().toISOString();
-    fs.appendFileSync(DEBUG_LOG, `[${timestamp}] ${msg}\n`);
-  } catch {
-    // Ignore write errors
-  }
+  const timestamp = new Date().toISOString();
+  fs.appendFile(DEBUG_LOG, `[${timestamp}] ${msg}\n`, () => undefined);
 }
 
 /**
@@ -22,7 +18,7 @@ function parseOscRgb(
 ): { r: number; g: number; b: number } | null {
   // Match OSC 11 response: ESC]11;rgb:RRRR/GGGG/BBBB (terminated by BEL or ST)
   const match = response.match(
-    /\x1b\]11;rgb:([0-9a-fA-F]+)\/([0-9a-fA-F]+)\/([0-9a-fA-F]+)/,
+    /\]11;rgb:([0-9a-fA-F]+)\/([0-9a-fA-F]+)\/([0-9a-fA-F]+)/,
   );
   if (match?.[1] && match[2] && match[3]) {
     // Convert from 16-bit to 8-bit

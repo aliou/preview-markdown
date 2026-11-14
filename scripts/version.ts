@@ -22,15 +22,15 @@ await $`bun run build`;
 
 // Compute hashes
 console.log("Computing hashes...");
-const darwinHash = (
-  await $`nix hash file --sri dist/pmd-darwin-arm64`.text()
-).trim();
-const linuxArmHash = (
-  await $`nix hash file --sri dist/pmd-linux-arm64`.text()
-).trim();
-const linuxX64Hash = (
-  await $`nix hash file --sri dist/pmd-linux-x64`.text()
-).trim();
+const darwinHashOutput =
+  await $`nix hash file --sri dist/pmd-darwin-arm64`.text();
+const darwinHash = darwinHashOutput.trim();
+const linuxArmHashOutput =
+  await $`nix hash file --sri dist/pmd-linux-arm64`.text();
+const linuxArmHash = linuxArmHashOutput.trim();
+const linuxX64HashOutput =
+  await $`nix hash file --sri dist/pmd-linux-x64`.text();
+const linuxX64Hash = linuxX64HashOutput.trim();
 
 console.log(`Darwin hash: ${darwinHash}`);
 console.log(`Linux ARM64 hash: ${linuxArmHash}`);

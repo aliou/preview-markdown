@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { APP_NAME, LOCAL_CONFIG_FILE } from "./constants.js";
+import { APP_NAME, LOCAL_CONFIG_FILE } from "./constants";
 
 /**
  * Theme configuration - either a single theme name or dark/light pair
@@ -55,7 +55,7 @@ function loadConfigFromPath(configPath: string): Config | null {
       };
     }
   } catch {
-    // Fall back to next option on error
+    return null;
   }
   return null;
 }

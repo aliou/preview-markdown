@@ -6,7 +6,7 @@ import {
   type PreparedMarkdown,
   type SourceSpan,
   sourceLineCount,
-} from "./source-map.js";
+} from "./source-map";
 
 export type GitLineStatus = "added" | "modified" | "deleted" | "moved";
 
@@ -77,7 +77,7 @@ function getGitLineMap(
   }
   const fileDir = path.dirname(absolutePath);
   const rootResult = runGit(fileDir, ["rev-parse", "--show-toplevel"]);
-  if (!rootResult || rootResult.status !== 0) return undefined;
+  if (rootResult?.status !== 0) return undefined;
 
   const root = rootResult.stdout.trim();
   if (!root) return undefined;
@@ -99,7 +99,7 @@ function getGitLineMap(
     "--",
     relativePath,
   ]);
-  if (!tracked || tracked.status !== 0) {
+  if (tracked?.status !== 0) {
     const ignored = runGit(root, ["check-ignore", "-q", "--", relativePath]);
     if (ignored?.status === 0) return undefined;
 
@@ -107,7 +107,7 @@ function getGitLineMap(
   }
 
   const head = runGit(root, ["rev-parse", "--verify", "HEAD"]);
-  if (!head || head.status !== 0) {
+  if (head?.status !== 0) {
     return createAllAddedMap(lineCount);
   }
 
@@ -122,7 +122,7 @@ function getGitLineMap(
     "--",
     relativePath,
   ]);
-  if (!diff || diff.status !== 0) return undefined;
+  if (diff?.status !== 0) return undefined;
 
   return parseGitDiff(diff.stdout, lineCount);
 }

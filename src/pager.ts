@@ -1,20 +1,16 @@
+import { stripVTControlCharacters } from "node:util";
 import type { Component } from "@earendil-works/pi-tui";
 import { sliceByColumn, visibleWidth } from "@earendil-works/pi-tui";
 import {
+  extractAnsiCode,
   extractSegments,
   sliceWithWidth,
-} from "@earendil-works/pi-tui/dist/utils.js";
-import type { GitLineStatus } from "./git.js";
-import { wrapUrlsHyperlinks } from "./hyperlink.js";
-import { pmdMatches } from "./keybindings.js";
-import type { SourceSpan } from "./source-map.js";
-import type { ViewportController } from "./viewport.js";
-
-// Strip ANSI escape codes for text searching
-const ANSI_REGEX = /\x1b\[[0-9;]*m/g;
-function stripAnsi(text: string): string {
-  return text.replace(ANSI_REGEX, "");
-}
+} from "@earendil-works/pi-tui/dist/utils";
+import type { GitLineStatus } from "./git";
+import { wrapUrlsHyperlinks } from "./hyperlink";
+import { pmdMatches } from "./keybindings";
+import type { SourceSpan } from "./source-map";
+import type { ViewportController } from "./viewport";
 
 // Help text displayed as a two-column layout at bottom of viewport
 const HELP_LINES = [
@@ -870,7 +866,7 @@ export class Pager implements Component {
     for (let i = 0; i < this.cachedLines.length; i++) {
       const line = this.cachedLines[i];
       if (line === undefined) continue;
-      const lineText = stripAnsi(line).toLowerCase();
+      const lineText = stripVTControlCharacters(line).toLowerCase();
       if (lineText.includes(queryLower)) {
         this.searchMatches.push(i);
       }
@@ -918,7 +914,7 @@ export class Pager implements Component {
   private highlightSearchTerms(line: string, isCurrent: boolean): string {
     if (!this.searchQuery) return line;
     const queryLower = this.searchQuery.toLowerCase();
-    const plain = stripAnsi(line);
+    const plain = stripVTControlCharacters(line);
     const plainLower = plain.toLowerCase();
 
     // Find all match positions in plain text
@@ -941,10 +937,10 @@ export class Pager implements Component {
 
     while (lineIdx < line.length) {
       // Pass through ANSI escape sequences unchanged
-      const ansiMatch = /^\x1b\[[0-9;]*m/.exec(line.slice(lineIdx));
+      const ansiMatch = extractAnsiCode(line, lineIdx);
       if (ansiMatch) {
-        result += ansiMatch[0];
-        lineIdx += ansiMatch[0].length;
+        result += ansiMatch.code;
+        lineIdx += ansiMatch.length;
         continue;
       }
 
@@ -955,9 +951,9 @@ export class Pager implements Component {
         const matchEnd = matchPosition.end;
         let matchStr = "";
         while (plainIdx < matchEnd && lineIdx < line.length) {
-          const a = /^\x1b\[[0-9;]*m/.exec(line.slice(lineIdx));
-          if (a) {
-            lineIdx += a[0].length;
+          const skipped = extractAnsiCode(line, lineIdx);
+          if (skipped) {
+            lineIdx += skipped.length;
             continue;
           }
           matchStr += line[lineIdx];

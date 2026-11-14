@@ -4,9 +4,8 @@ import {
   bundledLanguages,
   createHighlighter,
   type Highlighter,
-  type ThemeRegistration,
 } from "shiki";
-import type { TextMateTheme } from "./theme.js";
+import type { TextMateTheme } from "./theme";
 
 // Force chalk to always output colors (even when not TTY)
 chalk.level = 3;
@@ -119,13 +118,13 @@ export async function initSyntaxHighlighter(
 ): Promise<void> {
   if (!highlighter) {
     highlighter = await createHighlighter({
-      themes: [theme as unknown as ThemeRegistration],
+      themes: [theme],
       langs: COMMON_LANGS,
     });
     loadedThemes.add(theme.name);
   } else if (!loadedThemes.has(theme.name)) {
     // Load additional theme into existing highlighter
-    await highlighter.loadTheme(theme as unknown as ThemeRegistration);
+    await highlighter.loadTheme(theme);
     loadedThemes.add(theme.name);
   }
 }

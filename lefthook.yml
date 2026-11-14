@@ -2,7 +2,7 @@ pre-commit:
   parallel: false
   commands:
     format:
-      glob: "*.{ts,json}"
+      glob: "*.{ts,json,md}"
       run: bun run format
     typecheck:
       glob: "*.ts"
