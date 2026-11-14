@@ -1,16 +1,4 @@
-import {
-  createPreparedMarkdown,
-  type PreparedMarkdown,
-  type SourceSpan,
-} from "./source-map";
-
-/**
- * Preprocess MDX content to make it renderable as Markdown.
- * Converts JSX components and JS expressions into fenced code blocks.
- */
-export function preprocessMdx(content: string): string {
-  return preprocessMdxWithSourceMap(createPreparedMarkdown(content)).content;
-}
+import type { PreparedMarkdown, SourceSpan } from "./source-map";
 
 export function preprocessMdxWithSourceMap(
   document: PreparedMarkdown,

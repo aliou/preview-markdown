@@ -93,6 +93,7 @@ function isTableBorder(line: string): boolean {
 
 export class MarkdownDocument implements Component {
   readonly headings: Heading[];
+  readonly codeLanguages: string[];
   private readonly blocks: Block[];
   private readonly prepared: PreparedMarkdown;
   private readonly styles: DocumentStyles;
@@ -100,13 +101,19 @@ export class MarkdownDocument implements Component {
   constructor(prepared: PreparedMarkdown, styles: DocumentStyles) {
     this.prepared = prepared;
     this.styles = styles;
-    const tokens = new Marked().lexer(prepared.content);
+    const marked = new Marked();
+    const tokens = marked.lexer(prepared.content);
     const definitions = tokens
       .filter((token) => token.type === "def")
       .map((token) => token.raw.trim())
       .join("\n");
     this.blocks = this.buildBlocks(tokens, definitions);
     this.headings = this.buildHeadings(tokens);
+    this.codeLanguages = [];
+    marked.walkTokens(tokens, (token) => {
+      if (token.type === "code" && token.lang)
+        this.codeLanguages.push(token.lang);
+    });
   }
 
   private buildBlocks(tokens: Token[], definitions: string): Block[] {

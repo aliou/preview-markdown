@@ -1,351 +1,234 @@
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
+import { colorToHex, mixColors, parseColor } from "@earendil-works/pi-tui";
 import chalk from "chalk";
 import type { ThemeRegistration } from "shiki";
-import { APP_NAME } from "./constants";
+import { z } from "zod";
+import type { ColorScheme } from "./color-scheme";
+import { type Config, configDirectory, themeNameFor } from "./config";
 import type { DocumentStyles } from "./document";
-
-// Bundled themes (imported as JSON)
+import { FailedError } from "./failed-error";
+import type { GitLineStatus } from "./git";
+import { createCodeHighlighter } from "./highlighter";
 import senzuDark from "./themes/senzu-dark.json";
 import senzuLight from "./themes/senzu-light.json";
 
-export type TextMateTheme = ThemeRegistration & { name: string };
+chalk.level = 3;
 
-/**
- * Resolved colors for markdown rendering
- */
-export interface MarkdownColors {
-  background: string;
-  foreground: string;
-  heading: string;
-  link: string;
-  linkUrl: string;
-  comment: string;
-  code: string;
-  codeBlockBackground: string;
-  codeBlockBorder: string;
-  quote: string;
-  quoteBorder: string;
-  hr: string;
-  listBullet: string;
-  lineNumber: string;
-  // Status bar colors
-  statusBarBg: string;
-  statusBarFg: string;
-  // Help overlay colors
-  helpBg: string;
-  helpFg: string;
-  // Search match highlighting colors
-  searchMatch: string;
-  searchCurrentMatch: string;
-  // Git gutter colors
-  gitAdded: string;
-  gitModified: string;
-  gitDeleted: string;
-  gitMoved: string;
-}
+export type Style = (text: string) => string;
 
-/**
- * Complete resolved theme with both raw TextMate and derived colors
- */
-export interface ResolvedTheme {
+export type TextMateTheme = ThemeRegistration & {
   name: string;
-  isDark: boolean;
-  textmate: TextMateTheme;
-  colors: MarkdownColors;
-}
-
-// Bundled themes registry
-const BUNDLED_THEMES: Record<string, TextMateTheme> = {
-  "senzu-dark": { ...senzuDark, type: "dark" },
-  "senzu-light": { ...senzuLight, type: "light" },
+  type: ColorScheme;
 };
 
-const DEFAULT_DARK_THEME = "senzu-dark";
-const DEFAULT_LIGHT_THEME = "senzu-light";
-
-/**
- * Get the themes directory path
- */
-function getThemesDir(): string {
-  const xdgConfig = process.env.XDG_CONFIG_HOME;
-  const configBase = xdgConfig || path.join(os.homedir(), ".config");
-  return path.join(configBase, APP_NAME, "themes");
+export interface UiStyles {
+  text: Style;
+  background: Style;
+  accent: Style;
+  dim: Style;
+  bar: Style;
+  panel: Style;
+  panelBorder: Style;
+  selected: Style;
+  lineNumber: Style;
+  match: Style;
+  currentMatch: Style;
+  git: Record<GitLineStatus, Style>;
 }
 
-/**
- * Try to load a theme from the user's themes directory
- */
-function loadThemeFromFile(themeName: string): TextMateTheme | null {
-  const themesDir = getThemesDir();
-  const themePath = path.join(themesDir, `${themeName}.json`);
+export interface AppTheme {
+  textmate: TextMateTheme;
+  document: DocumentStyles;
+  ui: UiStyles;
+}
 
+const DEFAULT_THEMES: Record<ColorScheme, TextMateTheme> = {
+  dark: { ...senzuDark, type: "dark" },
+  light: { ...senzuLight, type: "light" },
+};
+
+const BUNDLED_THEMES = new Map(
+  Object.values(DEFAULT_THEMES).map((theme) => [theme.name, theme]),
+);
+
+const themeFileSchema = z.looseObject({
+  name: z.string().optional(),
+  type: z.enum(["dark", "light"]).optional(),
+  colors: z.record(z.string(), z.string()).optional(),
+  tokenColors: z.array(
+    z.looseObject({
+      scope: z.union([z.string(), z.array(z.string())]).optional(),
+      settings: z.looseObject({
+        foreground: z.string().optional(),
+        fontStyle: z.string().optional(),
+      }),
+    }),
+  ),
+});
+
+function themesDirectory(): string {
+  return path.join(configDirectory(), "themes");
+}
+
+function readThemeFile(
+  name: string,
+  scheme: ColorScheme,
+): TextMateTheme | null {
+  const file = path.join(themesDirectory(), `${name}.json`);
+  if (!fs.existsSync(file)) return null;
+  let raw: unknown;
   try {
-    if (fs.existsSync(themePath)) {
-      const content = fs.readFileSync(themePath, "utf8");
-      return JSON.parse(content) as TextMateTheme;
-    }
-  } catch {
-    return null;
+    raw = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    throw new FailedError(
+      `cannot read theme ${file}: ${(error as Error).message}`,
+    );
   }
-
-  return null;
+  const result = themeFileSchema.safeParse(raw);
+  if (!result.success) {
+    throw new FailedError(
+      `invalid theme ${file}:\n${z.prettifyError(result.error)}`,
+    );
+  }
+  return { ...result.data, name, type: result.data.type ?? scheme };
 }
 
-/**
- * Load a theme by name (checks user themes first, then bundled)
- */
-export function loadTheme(themeName: string): TextMateTheme | null {
-  // Try user themes first
-  const userTheme = loadThemeFromFile(themeName);
-  if (userTheme) {
-    return userTheme;
-  }
-
-  // Try bundled themes
-  const bundled = BUNDLED_THEMES[themeName];
-  if (bundled) {
-    return bundled;
-  }
-
-  return null;
+function loadTextMateTheme(
+  name: string,
+  scheme: ColorScheme,
+  warnings: string[],
+): TextMateTheme {
+  const theme = readThemeFile(name, scheme) ?? BUNDLED_THEMES.get(name);
+  if (theme) return theme;
+  const fallback = DEFAULT_THEMES[scheme];
+  warnings.push(
+    `theme "${name}" not found in ${themesDirectory()}, using ${fallback.name}`,
+  );
+  return fallback;
 }
 
-/**
- * Get the default theme for a color scheme
- */
-export function getDefaultTheme(isDark: boolean): TextMateTheme {
-  const name = isDark ? DEFAULT_DARK_THEME : DEFAULT_LIGHT_THEME;
-  // These are guaranteed to exist since we define them
-  return BUNDLED_THEMES[name] as TextMateTheme;
-}
-
-/**
- * Find a color by scope in tokenColors
- */
-function findColorByScope(
+function scopeColor(
   theme: TextMateTheme,
   ...scopes: string[]
-): string | null {
+): string | undefined {
   for (const scope of scopes) {
     for (const token of theme.tokenColors ?? []) {
-      const tokenScopes = Array.isArray(token.scope)
-        ? token.scope
-        : token.scope
-          ? [token.scope]
-          : [];
-
-      for (const s of tokenScopes) {
-        if (s === scope || s.startsWith(`${scope}.`)) {
-          if (token.settings.foreground) {
-            return token.settings.foreground;
-          }
-        }
-      }
+      const tokenScopes =
+        typeof token.scope === "string" ? [token.scope] : (token.scope ?? []);
+      const matches = tokenScopes.some(
+        (s) => s === scope || s.startsWith(`${scope}.`),
+      );
+      if (matches && token.settings.foreground)
+        return token.settings.foreground;
     }
   }
-  return null;
+  return undefined;
 }
 
-/**
- * Derive markdown colors from a TextMate theme
- */
-export function deriveMarkdownColors(theme: TextMateTheme): MarkdownColors {
-  const isDark = theme.type === "dark";
+function shade(hex: string, scheme: ColorScheme, amount: number): string {
+  const target = parseColor(scheme === "dark" ? "#ffffff" : "#000000");
+  return colorToHex(
+    mixColors(parseColor(hex.slice(0, 7)), target, amount, "srgb"),
+  );
+}
 
-  // Base colors
-  const background =
-    theme.colors?.["editor.background"] || (isDark ? "#151515" : "#f5e6d3");
-  const foreground =
-    theme.colors?.["editor.foreground"] || (isDark ? "#e8e8d3" : "#252525");
-
-  // Find colors from token scopes with fallbacks
+function buildTheme(textmate: TextMateTheme): AppTheme {
+  const scheme = textmate.type;
+  const dark = scheme === "dark";
+  const color = (key: string, fallback: string): string =>
+    textmate.colors?.[key] || fallback;
+  const background = color("editor.background", dark ? "#151515" : "#f5e6d3");
+  const foreground = color("editor.foreground", dark ? "#e8e8d3" : "#252525");
   const heading =
-    findColorByScope(theme, "markup.heading", "entity.name.tag") ||
-    (isDark ? "#8fbfdc" : "#3c5971");
-
+    scopeColor(textmate, "markup.heading", "entity.name.tag") ??
+    (dark ? "#8fbfdc" : "#3c5971");
   const link =
-    findColorByScope(
-      theme,
+    scopeColor(
+      textmate,
       "markup.underline.link",
       "markup.heading",
       "entity.name.tag",
-    ) || heading;
-
+    ) ?? heading;
   const comment =
-    findColorByScope(theme, "comment") || (isDark ? "#888888" : "#909090");
-
+    scopeColor(textmate, "comment") ?? (dark ? "#888888" : "#909090");
   const code =
-    findColorByScope(theme, "markup.inline.raw", "string") ||
-    (isDark ? "#99ad6a" : "#4a6335");
-
+    scopeColor(textmate, "markup.inline.raw", "string") ??
+    (dark ? "#99ad6a" : "#4a6335");
   const quote =
-    findColorByScope(theme, "string", "markup.quote") ||
-    (isDark ? "#99ad6a" : "#4a6335");
-
+    scopeColor(textmate, "string", "markup.quote") ??
+    (dark ? "#99ad6a" : "#4a6335");
   const keyword =
-    findColorByScope(theme, "keyword", "keyword.control") ||
-    (isDark ? "#c6b6ee" : "#655683");
-
-  // Derive UI colors from base colors
-  const statusBarBg = isDark
-    ? lighten(background, 0.1)
-    : darken(background, 0.05);
-  const helpBg = isDark ? lighten(background, 0.05) : darken(background, 0.02);
-  const codeBlockBackground = isDark
-    ? lighten(background, 0.06)
-    : darken(background, 0.04);
-
-  // Search match highlighting colors
-  const searchMatch = isDark ? "#b8860b" : "#c8a000";
-  const searchCurrentMatch = isDark ? "#d2691e" : "#cc5500";
-  const gitAdded = isDark ? "#238636" : "#2da44e";
-  const gitModified = isDark ? "#9e6a03" : "#bf8700";
-  const gitDeleted = isDark ? "#da3633" : "#cf222e";
-  const gitMoved = isDark ? "#1f6feb" : "#0969da";
+    scopeColor(textmate, "keyword", "keyword.control") ??
+    (dark ? "#c6b6ee" : "#655683");
+  const barBackground = shade(background, scheme, dark ? 0.1 : 0.05);
+  const panelBackground = shade(background, scheme, dark ? 0.05 : 0.02);
+  const codeBackground = shade(background, scheme, dark ? 0.06 : 0.04);
+  const highlight = (bg: string): Style => chalk.bold.bgHex(bg).hex("#0a0a0a");
 
   return {
-    background,
-    foreground,
-    heading,
-    link,
-    linkUrl: comment,
-    comment,
-    code,
-    codeBlockBackground,
-    codeBlockBorder: comment,
-    quote,
-    quoteBorder: comment,
-    hr: comment,
-    listBullet: keyword,
-    lineNumber: comment,
-    statusBarBg,
-    statusBarFg: foreground,
-    helpBg,
-    helpFg: comment,
-    searchMatch,
-    searchCurrentMatch,
-    gitAdded,
-    gitModified,
-    gitDeleted,
-    gitMoved,
+    textmate,
+    document: {
+      markdown: {
+        heading: chalk.hex(heading),
+        link: chalk.hex(link),
+        linkUrl: chalk.hex(comment),
+        code: chalk.hex(code),
+        codeBlock: chalk.hex(foreground).bgHex(codeBackground),
+        codeBlockBorder: chalk.hex(comment),
+        quote: chalk.hex(quote),
+        quoteBorder: chalk.hex(comment),
+        hr: chalk.hex(comment),
+        listBullet: chalk.hex(keyword),
+        bold: chalk.bold,
+        italic: chalk.italic,
+        strikethrough: chalk.strikethrough,
+        underline: chalk.underline,
+        highlightCode: createCodeHighlighter(textmate.name),
+      },
+      text: { color: chalk.hex(foreground), bgColor: chalk.bgHex(background) },
+      codeBlock: chalk.hex(foreground).bgHex(codeBackground),
+      codeBlockPadding: chalk.bgHex(codeBackground).hex(background),
+      mermaid: {
+        border: chalk.hex(comment),
+        text: chalk.hex(foreground),
+        edge: chalk.hex(link),
+        edgeLabel: chalk.hex(comment),
+        title: chalk.bold.hex(heading),
+      },
+    },
+    ui: {
+      text: chalk.hex(foreground),
+      background: chalk.bgHex(background),
+      accent: chalk.hex(link),
+      dim: chalk.hex(comment),
+      bar: chalk.bgHex(barBackground).hex(foreground),
+      panel: chalk.bgHex(panelBackground).hex(foreground),
+      panelBorder: chalk.bgHex(panelBackground).hex(comment),
+      selected: highlight(dark ? "#d2691e" : "#cc5500"),
+      lineNumber: chalk.hex(comment),
+      match: highlight(dark ? "#b8860b" : "#c8a000"),
+      currentMatch: highlight(dark ? "#d2691e" : "#cc5500"),
+      git: {
+        added: chalk.bgHex(background).hex(dark ? "#238636" : "#2da44e"),
+        modified: chalk.bgHex(background).hex(dark ? "#9e6a03" : "#bf8700"),
+        deleted: chalk.bgHex(background).hex(dark ? "#da3633" : "#cf222e"),
+        moved: chalk.bgHex(background).hex(dark ? "#1f6feb" : "#0969da"),
+      },
+    },
   };
 }
 
-/**
- * Lighten a hex color
- */
-function lighten(hex: string, amount: number): string {
-  const rgb = hexToRgb(hex);
-  if (!rgb) return hex;
-
-  const r = Math.min(255, Math.round(rgb.r + (255 - rgb.r) * amount));
-  const g = Math.min(255, Math.round(rgb.g + (255 - rgb.g) * amount));
-  const b = Math.min(255, Math.round(rgb.b + (255 - rgb.b) * amount));
-
-  return rgbToHex(r, g, b);
-}
-
-/**
- * Darken a hex color
- */
-function darken(hex: string, amount: number): string {
-  const rgb = hexToRgb(hex);
-  if (!rgb) return hex;
-
-  const r = Math.max(0, Math.round(rgb.r * (1 - amount)));
-  const g = Math.max(0, Math.round(rgb.g * (1 - amount)));
-  const b = Math.max(0, Math.round(rgb.b * (1 - amount)));
-
-  return rgbToHex(r, g, b);
-}
-
-function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  if (!result?.[1] || !result[2] || !result[3]) {
-    return null;
-  }
+export function loadThemes(
+  config: Config,
+  warnings: string[],
+): Record<ColorScheme, AppTheme> {
   return {
-    r: parseInt(result[1], 16),
-    g: parseInt(result[2], 16),
-    b: parseInt(result[3], 16),
-  };
-}
-
-function rgbToHex(r: number, g: number, b: number): string {
-  return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
-}
-
-/**
- * Resolve a theme by name, falling back to defaults
- */
-export function resolveTheme(
-  themeName: string | undefined,
-  isDark: boolean,
-): ResolvedTheme {
-  let theme: TextMateTheme;
-  let name: string;
-
-  if (themeName) {
-    const loaded = loadTheme(themeName);
-    if (loaded) {
-      theme = loaded;
-      name = themeName;
-    } else {
-      // Theme not found, fall back to default
-      theme = getDefaultTheme(isDark);
-      name = isDark ? DEFAULT_DARK_THEME : DEFAULT_LIGHT_THEME;
-    }
-  } else {
-    theme = getDefaultTheme(isDark);
-    name = isDark ? DEFAULT_DARK_THEME : DEFAULT_LIGHT_THEME;
-  }
-
-  return {
-    name,
-    isDark,
-    textmate: theme,
-    colors: deriveMarkdownColors(theme),
-  };
-}
-
-export function buildDocumentStyles(
-  colors: MarkdownColors,
-  highlightCode: (code: string, lang?: string) => string[],
-): DocumentStyles {
-  return {
-    markdown: {
-      heading: chalk.hex(colors.heading),
-      link: chalk.hex(colors.link),
-      linkUrl: chalk.hex(colors.linkUrl),
-      code: chalk.hex(colors.code),
-      codeBlock: chalk.hex(colors.foreground).bgHex(colors.codeBlockBackground),
-      codeBlockBorder: chalk.hex(colors.codeBlockBorder),
-      quote: chalk.hex(colors.quote),
-      quoteBorder: chalk.hex(colors.quoteBorder),
-      hr: chalk.hex(colors.hr),
-      listBullet: chalk.hex(colors.listBullet),
-      bold: chalk.bold,
-      italic: chalk.italic,
-      strikethrough: chalk.strikethrough,
-      underline: chalk.underline,
-      highlightCode,
-    },
-    text: {
-      color: chalk.hex(colors.foreground),
-      bgColor: chalk.bgHex(colors.background),
-    },
-    codeBlock: chalk.hex(colors.foreground).bgHex(colors.codeBlockBackground),
-    codeBlockPadding: chalk
-      .bgHex(colors.codeBlockBackground)
-      .hex(colors.background),
-    mermaid: {
-      border: chalk.hex(colors.codeBlockBorder),
-      text: chalk.hex(colors.foreground),
-      edge: chalk.hex(colors.link),
-      edgeLabel: chalk.hex(colors.comment),
-      title: chalk.bold.hex(colors.heading),
-    },
+    dark: buildTheme(
+      loadTextMateTheme(themeNameFor(config, "dark"), "dark", warnings),
+    ),
+    light: buildTheme(
+      loadTextMateTheme(themeNameFor(config, "light"), "light", warnings),
+    ),
   };
 }

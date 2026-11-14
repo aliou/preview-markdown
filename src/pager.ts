@@ -1,1014 +1,338 @@
 import { stripVTControlCharacters } from "node:util";
-import type { Component } from "@earendil-works/pi-tui";
-import { sliceByColumn, visibleWidth } from "@earendil-works/pi-tui";
-import {
-  extractAnsiCode,
-  extractSegments,
-  sliceWithWidth,
-} from "@earendil-works/pi-tui/dist/utils";
-import type { GitLineStatus } from "./git";
+import { type Component, Input, visibleWidth } from "@earendil-works/pi-tui";
+import { extractAnsiCode } from "@earendil-works/pi-tui/dist/utils";
+import type { RenderedDocument } from "./document";
+import type { GitStatusResolver } from "./git";
 import { wrapUrlsHyperlinks } from "./hyperlink";
-import { pmdMatches } from "./keybindings";
+import { type PmdKeybinding, pmdMatches } from "./keybindings";
 import type { SourceSpan } from "./source-map";
+import type { Style, UiStyles } from "./theme";
 import type { ViewportController } from "./viewport";
 
-// Help text displayed as a two-column layout at bottom of viewport
-const HELP_LINES = [
-  "k/↑ up                 g/home  go to top",
-  "j/↓ down               G/end   go to bottom",
-  "b/pgup  page up        /       search",
-  "f/pgdn  page down      n/N     next/prev match",
-  "u  ½ page up           r       reload file",
-  "d  ½ page down         e       edit in $EDITOR",
-  "T                      table of contents",
-  "                       ?       toggle help",
-  "                       q/esc   quit",
-];
-
-export interface TocEntry {
-  level: number;
-  title: string;
-  line: number;
+export interface PagerContent extends Component {
+  renderWithSourceMap(width: number, fullWidth: number): RenderedDocument;
 }
 
-// Line number column width (4 digits + 1 space)
-const LINE_NUMBER_WIDTH = 5;
-const GIT_GUTTER_WIDTH = 1;
-const GIT_GUTTER_GLYPH = "▎";
-
-interface SourceMappedRenderResult {
-  lines: string[];
-  sourceSpans: Array<SourceSpan | null>;
-}
-
-interface SourceMappedComponent extends Component {
-  renderWithSourceMap(
-    width: number,
-    fullWidth?: number,
-  ): SourceMappedRenderResult;
-}
-
-function isSourceMappedComponent(
-  component: Component,
-): component is SourceMappedComponent {
-  return (
-    "renderWithSourceMap" in component &&
-    typeof component.renderWithSourceMap === "function"
-  );
+export interface PagerActions {
+  quit(): void;
+  help(): void;
+  tableOfContents(): void;
+  edit(sourceLine: number): void;
+  reload(): void;
+  suspend(): void;
 }
 
 export interface PagerOptions {
-  content: Component;
-  viewport?: ViewportController;
-  onExit: () => void;
-  onEdit?: (lineNumber: number) => void;
-  onReload?: () => void;
-  onSuspend?: () => void;
-  sourceLineForSpan?: (span: SourceSpan | null) => number | null;
-  showLineNumbers?: boolean;
-  gitStatusForSpan?: (span: SourceSpan | null) => GitLineStatus | null;
-  wrapWidth?: number;
-  bgColor?: (text: string) => string;
-  fgColor?: (text: string) => string;
-  helpBgColor?: (text: string) => string;
-  helpFgColor?: (text: string) => string;
-  searchBgColor?: (text: string) => string;
-  searchFgColor?: (text: string) => string;
-  lineNumberColor?: (text: string) => string;
-  matchColor?: (text: string) => string;
-  currentMatchColor?: (text: string) => string;
-  gitAddedColor?: (text: string) => string;
-  gitModifiedColor?: (text: string) => string;
-  gitDeletedColor?: (text: string) => string;
-  gitMovedColor?: (text: string) => string;
-  tocEntries?: TocEntry[];
+  content: PagerContent;
+  gitStatus: GitStatusResolver | undefined;
+  viewport: ViewportController;
+  styles: () => UiStyles;
+  actions: PagerActions;
+  showLineNumbers: boolean;
+  wrapWidth: number;
+}
+
+export interface SearchStatus {
+  current: number;
+  total: number;
+}
+
+const LINE_NUMBER_WIDTH = 5;
+const GIT_GUTTER_GLYPH = "▎";
+
+function findMatches(line: string, query: string): Array<[number, number]> {
+  const plain = stripVTControlCharacters(line).toLowerCase();
+  const needle = query.toLowerCase();
+  const positions: Array<[number, number]> = [];
+  let from = plain.indexOf(needle);
+  while (from !== -1) {
+    positions.push([from, from + needle.length]);
+    from = plain.indexOf(needle, from + needle.length);
+  }
+  return positions;
+}
+
+function highlightMatches(line: string, query: string, style: Style): string {
+  const positions = findMatches(line, query);
+  let result = "";
+  let plainIndex = 0;
+  let index = 0;
+  let next = 0;
+  while (index < line.length) {
+    const sequence = extractAnsiCode(line, index);
+    if (sequence) {
+      result += sequence.code;
+      index += sequence.length;
+      continue;
+    }
+    const match = positions[next];
+    if (match && plainIndex === match[0]) {
+      let text = "";
+      while (plainIndex < match[1] && index < line.length) {
+        const skipped = extractAnsiCode(line, index);
+        if (skipped) {
+          index += skipped.length;
+          continue;
+        }
+        text += line[index];
+        index++;
+        plainIndex++;
+      }
+      result += style(text);
+      next++;
+      continue;
+    }
+    result += line[index];
+    index++;
+    plainIndex++;
+  }
+  return result;
 }
 
 export class Pager implements Component {
-  private content: Component;
-  private viewport?: ViewportController;
-  private onExit: () => void;
-  private onEdit?: (lineNumber: number) => void;
-  private onReload?: () => void;
-  private onSuspend?: () => void;
-  private sourceLineForSpan?: (span: SourceSpan | null) => number | null;
+  private content: PagerContent;
+  private gitStatus: GitStatusResolver | undefined;
+  private readonly viewport: ViewportController;
+  private readonly styles: () => UiStyles;
+  private readonly actions: PagerActions;
+  private readonly showLineNumbers: boolean;
+  private readonly wrapWidth: number;
+  private lines: string[] = [];
+  private spans: Array<SourceSpan | null> = [];
+  private renderedWidth = -1;
   private fileChanged = false;
-  private showLineNumbers: boolean;
-  private wrapWidth: number;
-  private scrollOffset = 0;
-  private cachedLines: string[] = [];
-  private cachedSourceSpans: Array<SourceSpan | null> = [];
-  private cachedWidth = 0;
-  private cachedFullWidth = 0;
-  private viewportHeight = 0;
-  private showingHelp = false;
-  private showingToc = false;
-  private tocEntries: TocEntry[] = [];
-  private tocIndex = 0;
-  private bgColor: (text: string) => string;
-  private fgColor: (text: string) => string;
-  private helpBgColor: (text: string) => string;
-  private helpFgColor: (text: string) => string;
-  private searchBgColor: (text: string) => string;
-  private searchFgColor: (text: string) => string;
-  private lineNumberColor: (text: string) => string;
-  private matchColor: (text: string) => string;
-  private currentMatchColor: (text: string) => string;
-  private gitStatusForSpan?: (span: SourceSpan | null) => GitLineStatus | null;
-  private gitAddedColor: (text: string) => string;
-  private gitModifiedColor: (text: string) => string;
-  private gitDeletedColor: (text: string) => string;
-  private gitMovedColor: (text: string) => string;
-
-  // Search state
-  private searchMode = false;
-  private searchQuery = "";
-  private searchMatches: number[] = [];
-  private currentMatchIndex = -1;
+  private searchInput: Input | null = null;
+  private query = "";
+  private matches: number[] = [];
+  private currentMatch = -1;
 
   constructor(options: PagerOptions) {
     this.content = options.content;
+    this.gitStatus = options.gitStatus;
     this.viewport = options.viewport;
-    this.onExit = options.onExit;
-    this.onEdit = options.onEdit;
-    this.onReload = options.onReload;
-    this.onSuspend = options.onSuspend;
-    this.sourceLineForSpan = options.sourceLineForSpan;
-    this.showLineNumbers = options.showLineNumbers ?? false;
-    this.gitStatusForSpan = options.gitStatusForSpan;
-    this.wrapWidth = options.wrapWidth ?? 0;
-    this.bgColor = options.bgColor ?? ((t) => t);
-    this.fgColor = options.fgColor ?? ((t) => t);
-    this.helpBgColor = options.helpBgColor ?? ((t) => t);
-    this.helpFgColor = options.helpFgColor ?? ((t) => t);
-    this.searchBgColor = options.searchBgColor ?? ((t) => t);
-    this.searchFgColor = options.searchFgColor ?? ((t) => t);
-    this.lineNumberColor = options.lineNumberColor ?? ((t) => t);
-    this.matchColor = options.matchColor ?? ((t) => t);
-    this.currentMatchColor = options.currentMatchColor ?? ((t) => t);
-    this.gitAddedColor = options.gitAddedColor ?? ((t) => t);
-    this.gitModifiedColor = options.gitModifiedColor ?? ((t) => t);
-    this.gitDeletedColor = options.gitDeletedColor ?? ((t) => t);
-    this.gitMovedColor = options.gitMovedColor ?? ((t) => t);
-    this.tocEntries = options.tocEntries ?? [];
+    this.styles = options.styles;
+    this.actions = options.actions;
+    this.showLineNumbers = options.showLineNumbers;
+    this.wrapWidth = options.wrapWidth;
   }
 
-  setContent(content: Component, tocEntries?: TocEntry[]): void {
-    if (tocEntries) {
-      this.tocEntries = tocEntries;
-      this.tocIndex = Math.min(
-        this.tocIndex,
-        Math.max(0, tocEntries.length - 1),
-      );
-    }
+  get capturesViewportInput(): boolean {
+    return this.searchInput !== null;
+  }
+
+  setContent(
+    content: PagerContent,
+    gitStatus: GitStatusResolver | undefined,
+  ): void {
     this.content = content;
+    this.gitStatus = gitStatus;
+    this.fileChanged = false;
     this.invalidate();
   }
 
-  setTocEntries(tocEntries: TocEntry[]): void {
-    this.tocEntries = tocEntries;
-    this.tocIndex = Math.min(this.tocIndex, Math.max(0, tocEntries.length - 1));
-  }
-
-  setGitStatusResolver(
-    resolver: ((span: SourceSpan | null) => GitLineStatus | null) | undefined,
-  ): void {
-    this.gitStatusForSpan = resolver;
-    this.invalidate();
-  }
-
-  setSourceLineResolver(
-    resolver: ((span: SourceSpan | null) => number | null) | undefined,
-  ): void {
-    this.sourceLineForSpan = resolver;
-  }
-
-  setViewportHeight(height: number): void {
-    this.viewportHeight = height;
-  }
-
-  setFileChanged(changed: boolean): void {
-    this.fileChanged = changed;
-  }
-
-  updateColors(colors: {
-    bgColor?: (text: string) => string;
-    fgColor?: (text: string) => string;
-    helpBgColor?: (text: string) => string;
-    helpFgColor?: (text: string) => string;
-    searchBgColor?: (text: string) => string;
-    searchFgColor?: (text: string) => string;
-    lineNumberColor?: (text: string) => string;
-    matchColor?: (text: string) => string;
-    currentMatchColor?: (text: string) => string;
-    gitAddedColor?: (text: string) => string;
-    gitModifiedColor?: (text: string) => string;
-    gitDeletedColor?: (text: string) => string;
-    gitMovedColor?: (text: string) => string;
-  }): void {
-    if (colors.bgColor) this.bgColor = colors.bgColor;
-    if (colors.fgColor) this.fgColor = colors.fgColor;
-    if (colors.helpBgColor) this.helpBgColor = colors.helpBgColor;
-    if (colors.helpFgColor) this.helpFgColor = colors.helpFgColor;
-    if (colors.searchBgColor) this.searchBgColor = colors.searchBgColor;
-    if (colors.searchFgColor) this.searchFgColor = colors.searchFgColor;
-    if (colors.lineNumberColor) this.lineNumberColor = colors.lineNumberColor;
-    if (colors.matchColor) this.matchColor = colors.matchColor;
-    if (colors.currentMatchColor)
-      this.currentMatchColor = colors.currentMatchColor;
-    if (colors.gitAddedColor) this.gitAddedColor = colors.gitAddedColor;
-    if (colors.gitModifiedColor)
-      this.gitModifiedColor = colors.gitModifiedColor;
-    if (colors.gitDeletedColor) this.gitDeletedColor = colors.gitDeletedColor;
-    if (colors.gitMovedColor) this.gitMovedColor = colors.gitMovedColor;
+  setFileChanged(): void {
+    this.fileChanged = true;
   }
 
   invalidate(): void {
     this.content.invalidate();
-    this.cachedLines = [];
-    this.cachedSourceSpans = [];
-    this.cachedWidth = 0;
-    this.cachedFullWidth = 0;
+    this.renderedWidth = -1;
   }
 
-  private getContentHeight(): number {
-    return this.viewport?.viewportHeight ?? this.viewportHeight;
-  }
-
-  private getContentWidth(width: number): number {
-    const availableWidth = this.getAvailableContentWidth(width);
-    // Use wrapWidth if set and smaller than available width
-    if (this.wrapWidth > 0 && this.wrapWidth < availableWidth) {
-      return this.wrapWidth;
-    }
-    return availableWidth;
-  }
-
-  private getAvailableContentWidth(width: number): number {
-    const gutterWidth = this.isGitGutterVisible() ? GIT_GUTTER_WIDTH : 0;
-    return Math.max(
-      1,
-      width - gutterWidth - (this.showLineNumbers ? LINE_NUMBER_WIDTH : 0),
+  private gutterWidth(): number {
+    return (
+      (this.gitStatus ? 1 : 0) + (this.showLineNumbers ? LINE_NUMBER_WIDTH : 0)
     );
+  }
+
+  private refresh(width: number): void {
+    if (this.renderedWidth === width) return;
+    const fullWidth = Math.max(1, width - this.gutterWidth());
+    const wrapped =
+      this.wrapWidth > 0 ? Math.min(this.wrapWidth, fullWidth) : fullWidth;
+    const rendered = this.content.renderWithSourceMap(wrapped, fullWidth);
+    this.lines = rendered.lines;
+    this.spans = rendered.sourceSpans;
+    this.renderedWidth = width;
+    this.updateMatches();
   }
 
   render(width: number): string[] {
-    const contentWidth = this.getContentWidth(width);
-    const fullContentWidth = this.getAvailableContentWidth(width);
-
-    // Re-render content if width changed
-    if (
-      this.cachedWidth !== contentWidth ||
-      this.cachedFullWidth !== fullContentWidth ||
-      this.cachedLines.length === 0
-    ) {
-      if (isSourceMappedComponent(this.content)) {
-        const result = this.content.renderWithSourceMap(
-          contentWidth,
-          fullContentWidth,
-        );
-        this.cachedLines = result.lines;
-        this.cachedSourceSpans = result.sourceSpans;
-      } else {
-        this.cachedLines = this.content.render(contentWidth);
-        this.cachedSourceSpans = new Array(this.cachedLines.length).fill(null);
-      }
-      this.cachedWidth = contentWidth;
-      this.cachedFullWidth = fullContentWidth;
-    }
-
-    const totalLines = this.cachedLines.length;
-    this.viewport?.setContentLineCount(totalLines);
-
-    // Add line numbers if enabled, always extending line bg to viewport width
-    const visible: string[] = [];
-    for (let lineIndex = 0; lineIndex < this.cachedLines.length; lineIndex++) {
-      const lineNum = lineIndex + 1; // 1-based line numbers
-      let line = this.cachedLines[lineIndex] ?? "";
-
-      // Highlight search matches within this line
-      if (this.searchMatches.length > 0 && this.searchQuery) {
-        if (this.searchMatches.includes(lineIndex)) {
-          const isCurrent =
-            this.searchMatches[this.currentMatchIndex] === lineIndex;
-          line = this.highlightSearchTerms(line, isCurrent);
-        }
-      }
-
-      // Wrap bare URLs in OSC 8 hyperlinks so they are clickable in terminals
-      // that support it. Applied after search highlighting (which runs on the
-      // raw line) and before gutters/numbers are prefixed. URL text stays
-      // visible on terminals that ignore OSC 8, so no link target is hidden.
-      line = wrapUrlsHyperlinks(line);
-
-      const gutter = this.isGitGutterVisible()
-        ? this.renderGitGutter(this.cachedSourceSpans[lineIndex] ?? null)
-        : "";
-      const numbered = this.showLineNumbers
-        ? `${this.lineNumberColor(lineNum.toString().padStart(4, " "))} ${line}`
-        : line;
-      const rendered = `${gutter}${numbered}`;
-
-      const pad = Math.max(0, width - visibleWidth(rendered));
-      visible.push(
-        pad > 0 ? `${rendered}${this.bgColor(" ".repeat(pad))}` : rendered,
-      );
-    }
-
-    // Pad content to fill its area (with background)
-    const emptyGutter = this.isGitGutterVisible()
-      ? this.renderGitGutter(null)
-      : "";
-    const emptyNumbers = this.showLineNumbers
-      ? `${this.lineNumberColor("    ")} `
-      : "";
-    const emptyLine = `${emptyGutter}${emptyNumbers}${this.bgColor(" ".repeat(contentWidth))}`;
-    const minimumHeight = this.getContentHeight();
-    while (visible.length < minimumHeight) {
-      visible.push(emptyLine);
-    }
-
-    if (this.showingHelp) {
-      return this.renderCenteredOverlay(
-        visible,
+    this.refresh(width);
+    const ui = this.styles();
+    this.viewport.setContentLineCount(this.lines.length);
+    const current = this.matches[this.currentMatch];
+    const output = this.lines.map((line, index) => {
+      const highlighted =
+        this.query && this.matches.includes(index)
+          ? highlightMatches(
+              line,
+              this.query,
+              index === current ? ui.currentMatch : ui.match,
+            )
+          : line;
+      return this.decorate(
+        wrapUrlsHyperlinks(highlighted),
+        this.spans[index] ?? null,
+        index + 1,
         width,
-        this.buildHelpBox(width),
+        ui,
       );
+    });
+    while (output.length < this.viewport.viewportHeight) {
+      output.push(this.decorate("", null, null, width, ui));
     }
-
-    if (this.showingToc) {
-      return this.renderCenteredOverlay(
-        visible,
-        width,
-        this.buildTocBox(width),
-      );
-    }
-
-    return visible;
-  }
-
-  private isGitGutterVisible(): boolean {
-    return this.gitStatusForSpan !== undefined;
-  }
-
-  private renderGitGutter(span: SourceSpan | null): string {
-    const status = this.gitStatusForSpan?.(span) ?? null;
-    switch (status) {
-      case "added":
-        return this.bgColor(this.gitAddedColor(GIT_GUTTER_GLYPH));
-      case "modified":
-        return this.bgColor(this.gitModifiedColor(GIT_GUTTER_GLYPH));
-      case "deleted":
-        return this.bgColor(this.gitDeletedColor(GIT_GUTTER_GLYPH));
-      case "moved":
-        return this.bgColor(this.gitMovedColor(GIT_GUTTER_GLYPH));
-      default:
-        return this.bgColor(" ");
-    }
-  }
-
-  private getEditorLineForRenderedLine(renderedLineIndex: number): number {
-    const renderedLineNumber = renderedLineIndex + 1;
-    const span = this.cachedSourceSpans[renderedLineIndex] ?? null;
-    const sourceLine = this.sourceLineForSpan?.(span) ?? span?.startLine;
-    return sourceLine ?? renderedLineNumber;
-  }
-
-  private renderSearchInput(width: number): string {
-    const prompt = "/";
-    const query = this.searchQuery;
-    const cursor = "█";
-    const content = `${prompt}${query}${cursor}`;
-    const padding = " ".repeat(Math.max(0, width - content.length));
-    return this.searchBgColor(this.searchFgColor(content + padding));
-  }
-
-  private renderNotification(width: number): string {
-    const message = " File changed. Press r to reload.";
-    const padding = " ".repeat(Math.max(0, width - message.length));
-    return this.helpBgColor(this.helpFgColor(message + padding));
-  }
-
-  getFooterLines(width: number): string[] {
-    const lines: string[] = [];
-    if (this.fileChanged) {
-      lines.push(this.renderNotification(width));
-    }
-    if (this.searchMode) {
-      lines.push(this.renderSearchInput(width));
-    }
-    return lines;
-  }
-
-  private buildHelpBox(maxWidth: number): string[] {
-    const overlayWidth = Math.max(
-      1,
-      Math.min(maxWidth, Math.max(40, Math.floor(maxWidth * 0.7))),
-    );
-    const innerWidth = Math.max(1, overlayWidth - 2);
-    const title = " Keyboard shortcuts ";
-    const lines = [
-      this.searchBgColor(
-        this.searchFgColor(`┌${title.padEnd(innerWidth, "─")}┐`),
-      ),
-    ];
-
-    for (const helpLine of HELP_LINES) {
-      const body =
-        visibleWidth(helpLine) > innerWidth
-          ? `${sliceByColumn(helpLine, 0, Math.max(0, innerWidth - 1), true)}…`
-          : `${helpLine}${" ".repeat(Math.max(0, innerWidth - visibleWidth(helpLine)))}`;
-      lines.push(
-        `${this.searchBgColor(this.searchFgColor("│"))}${this.bgColor(this.fgColor(body))}${this.searchBgColor(this.searchFgColor("│"))}`,
-      );
-    }
-
-    lines.push(
-      this.searchBgColor(this.searchFgColor(`└${"─".repeat(innerWidth)}┘`)),
-    );
-    return lines;
-  }
-
-  private renderCenteredOverlay(
-    base: string[],
-    width: number,
-    lines: string[],
-  ): string[] {
-    const overlayWidth = Math.max(
-      0,
-      ...lines.map((line) => visibleWidth(line)),
-    );
-    const overlayHeight = lines.length;
-    const scrollTop = this.viewport?.scrollTop ?? this.scrollOffset;
-    const viewportHeight = this.getContentHeight();
-    const left = Math.max(0, Math.floor((width - overlayWidth) / 2));
-    const top = Math.max(
-      0,
-      scrollTop + Math.floor((viewportHeight - overlayHeight) / 2),
-    );
-    const output = [...base];
-    while (output.length < scrollTop + viewportHeight) {
-      output.push(this.bgColor(" ".repeat(width)));
-    }
-
-    for (let i = 0; i < lines.length; i++) {
-      const target = top + i;
-      if (target >= output.length) break;
-      output[target] = this.compositeLineAt(
-        output[target] ?? "",
-        lines[i] ?? "",
-        left,
-        overlayWidth,
-        width,
-      );
-    }
-
     return output;
   }
 
-  private compositeLineAt(
-    baseLine: string,
-    overlayLine: string,
-    startCol: number,
-    overlayWidth: number,
-    totalWidth: number,
+  private decorate(
+    line: string,
+    span: SourceSpan | null,
+    number: number | null,
+    width: number,
+    ui: UiStyles,
   ): string {
-    const afterStart = startCol + overlayWidth;
-    const base = extractSegments(
-      baseLine,
-      startCol,
-      afterStart,
-      totalWidth - afterStart,
-      true,
-    );
-    const overlay = sliceWithWidth(overlayLine, 0, overlayWidth, true);
-    const reset = "\x1b[0m\x1b]8;;\x07";
-    const beforePad = Math.max(0, startCol - base.beforeWidth);
-    const overlayPad = Math.max(0, overlayWidth - overlay.width);
-    const actualBeforeWidth = Math.max(startCol, base.beforeWidth);
-    const actualOverlayWidth = Math.max(overlayWidth, overlay.width);
-    const afterTarget = Math.max(
-      0,
-      totalWidth - actualBeforeWidth - actualOverlayWidth,
-    );
-    const afterPad = Math.max(0, afterTarget - base.afterWidth);
-    const result =
-      base.before +
-      " ".repeat(beforePad) +
-      reset +
-      overlay.text +
-      " ".repeat(overlayPad) +
-      reset +
-      base.after +
-      " ".repeat(afterPad);
-
-    return visibleWidth(result) <= totalWidth
-      ? result
-      : sliceByColumn(result, 0, totalWidth, true);
+    let prefix = "";
+    if (this.gitStatus) {
+      const status = this.gitStatus(span);
+      prefix += status ? ui.git[status](GIT_GUTTER_GLYPH) : ui.background(" ");
+    }
+    if (this.showLineNumbers) {
+      prefix += ui.background(
+        ui.lineNumber(
+          `${number === null ? "" : number}`.padStart(LINE_NUMBER_WIDTH - 1),
+        ),
+      );
+      prefix += ui.background(" ");
+    }
+    const body = `${prefix}${line}`;
+    const fill = width - visibleWidth(body);
+    return fill > 0 ? `${body}${ui.background(" ".repeat(fill))}` : body;
   }
 
-  private buildTocBox(maxWidth: number): string[] {
-    const width = Math.max(
-      1,
-      Math.min(maxWidth, Math.max(40, Math.floor(maxWidth * 0.7))),
-    );
-    const height = Math.min(
-      Math.max(6, this.tocEntries.length + 4),
-      Math.max(3, this.getContentHeight() - 4),
-    );
+  footerLines(width: number): string[] {
+    const ui = this.styles();
     const lines: string[] = [];
-    const innerWidth = Math.max(1, width - 2);
-    const title = " Table of contents ";
-    lines.push(
-      this.searchBgColor(
-        this.searchFgColor(`┌${title.padEnd(innerWidth, "─")}┐`),
-      ),
-    );
-
-    if (this.tocEntries.length === 0) {
-      lines.push(
-        this.bgColor(
-          this.fgColor(`│${" No headings".padEnd(innerWidth, " ")}│`),
-        ),
-      );
-    } else {
-      const listHeight = height - 3;
-      const start = Math.max(
-        0,
-        Math.min(
-          this.tocIndex - Math.floor(listHeight / 2),
-          this.tocEntries.length - listHeight,
-        ),
-      );
-      const end = Math.min(this.tocEntries.length, start + listHeight);
-
-      for (let i = start; i < end; i++) {
-        const entry = this.tocEntries[i];
-        if (!entry) continue;
-        const isSelected = i === this.tocIndex;
-        const prefix = isSelected ? "›" : " ";
-        const indent = "  ".repeat(Math.max(0, entry.level - 1));
-        const title = `${prefix} ${indent}${entry.title}`;
-        const body =
-          visibleWidth(title) > innerWidth
-            ? `${sliceByColumn(title, 0, Math.max(0, innerWidth - 1), true)}…`
-            : `${title}${" ".repeat(Math.max(0, innerWidth - visibleWidth(title)))}`;
-        const coloredBody = isSelected
-          ? this.currentMatchColor(body)
-          : this.bgColor(this.fgColor(body));
-        lines.push(
-          `${this.searchBgColor(this.searchFgColor("│"))}${coloredBody}${this.searchBgColor(this.searchFgColor("│"))}`,
-        );
-      }
+    if (this.fileChanged) {
+      const notice = " File changed on disk. Press r to reload.";
+      lines.push(ui.panel(notice.padEnd(width)));
     }
-
-    const empty = this.bgColor(this.fgColor(`│${" ".repeat(innerWidth)}│`));
-    while (lines.length < height - 1) lines.push(empty);
-    lines.push(
-      this.searchBgColor(this.searchFgColor(`└${"─".repeat(innerWidth)}┘`)),
-    );
+    if (this.searchInput) {
+      lines.push(ui.bar(this.searchInput.render(width)[0] ?? ""));
+    }
     return lines;
   }
 
+  scrollPercent(): number {
+    return this.viewport.scrollPercent();
+  }
+
+  searchStatus(): SearchStatus | null {
+    if (!this.query) return null;
+    return { current: this.currentMatch + 1, total: this.matches.length };
+  }
+
+  scrollToSourceLine(sourceLine: number): void {
+    const exact = this.spans.findIndex(
+      (span) =>
+        span && sourceLine >= span.startLine && sourceLine <= span.endLine,
+    );
+    const after = this.spans.findIndex(
+      (span) => span && span.startLine >= sourceLine,
+    );
+    this.viewport.scrollToLine(Math.max(0, exact !== -1 ? exact : after));
+  }
+
   handleInput(data: string): void {
-    // Handle search mode input separately
-    if (this.searchMode) {
-      this.handleSearchInput(data);
+    if (this.searchInput) {
+      this.handleSearchInput(this.searchInput, data);
       return;
     }
-
-    if (this.showingToc) {
-      this.handleTocInput(data);
-      return;
-    }
-
-    // Handle suspend
-    if (pmdMatches(data, "pmd.pager.suspend")) {
-      if (this.onSuspend) {
-        this.onSuspend();
-      }
-      return;
-    }
-
-    // Toggle TOC
-    if (pmdMatches(data, "pmd.pager.toggleToc")) {
-      this.showingToc = true;
-      this.showingHelp = false;
-      return;
-    }
-
-    // Toggle help
-    if (pmdMatches(data, "pmd.common.toggleHelp")) {
-      this.showingHelp = !this.showingHelp;
-      return;
-    }
-
-    // If showing help, any other key closes it
-    if (this.showingHelp) {
-      this.showingHelp = false;
-      return;
-    }
-
-    // Enter search mode
-    if (pmdMatches(data, "pmd.pager.search")) {
-      this.searchMode = true;
-      this.searchQuery = "";
-      return;
-    }
-
-    // Navigate to next match
-    if (pmdMatches(data, "pmd.pager.nextMatch")) {
-      this.goToNextMatch();
-      return;
-    }
-
-    // Navigate to previous match
-    if (pmdMatches(data, "pmd.pager.prevMatch")) {
-      this.goToPrevMatch();
-      return;
-    }
-
-    // Edit in $EDITOR
-    if (pmdMatches(data, "pmd.pager.edit")) {
-      if (this.onEdit) {
-        const lineIndex = this.viewport?.scrollTop ?? this.scrollOffset;
-        const lineNumber = this.getEditorLineForRenderedLine(lineIndex);
-        this.onEdit(lineNumber);
-      }
-      return;
-    }
-
-    // Reload file
-    if (pmdMatches(data, "pmd.pager.reload")) {
-      if (this.onReload) {
-        this.onReload();
-      }
-      return;
-    }
-
-    if (pmdMatches(data, "pmd.common.quit")) {
-      this.onExit();
-      return;
-    }
-
-    if (pmdMatches(data, "pmd.common.up")) {
-      this.scrollBy(-1);
-      return;
-    }
-
-    if (pmdMatches(data, "pmd.common.down")) {
-      this.scrollBy(1);
-      return;
-    }
-
-    // Page Up
-    if (pmdMatches(data, "pmd.common.pageUp")) {
-      this.scrollPage(-1);
-      return;
-    }
-
-    // Page Down
-    if (pmdMatches(data, "pmd.common.pageDown")) {
-      this.scrollPage(1);
-      return;
-    }
-
-    // Home / go to top
-    if (pmdMatches(data, "pmd.common.top")) {
-      this.scrollToTop();
-      return;
-    }
-
-    // End / go to bottom
-    if (pmdMatches(data, "pmd.common.bottom")) {
-      this.scrollToBottom();
-      return;
-    }
-
-    // Half page up
-    if (pmdMatches(data, "pmd.pager.halfPageUp")) {
-      this.scrollHalfPage(-1);
-      return;
-    }
-
-    // Half page down
-    if (pmdMatches(data, "pmd.pager.halfPageDown")) {
-      this.scrollHalfPage(1);
-      return;
-    }
+    const action = this.actionFor(data);
+    action?.();
   }
 
-  private scrollBy(lines: number): void {
-    if (this.viewport) {
-      this.viewport.scrollBy(lines);
-      return;
-    }
-    const maxScroll = Math.max(
-      0,
-      this.cachedLines.length - this.getContentHeight(),
-    );
-    this.scrollOffset = Math.max(
-      0,
-      Math.min(maxScroll, this.scrollOffset + lines),
-    );
+  private actionFor(data: string): (() => void) | undefined {
+    const viewport = this.viewport;
+    const bindings: Array<[PmdKeybinding, () => void]> = [
+      ["pmd.pager.suspend", () => this.actions.suspend()],
+      ["pmd.pager.toc", () => this.actions.tableOfContents()],
+      ["pmd.help", () => this.actions.help()],
+      ["pmd.pager.search", () => this.startSearch()],
+      ["pmd.pager.nextMatch", () => this.stepMatch(1)],
+      ["pmd.pager.previousMatch", () => this.stepMatch(-1)],
+      ["pmd.pager.edit", () => this.actions.edit(this.sourceLineAtTop())],
+      ["pmd.pager.reload", () => this.actions.reload()],
+      ["pmd.quit", () => this.actions.quit()],
+      ["pmd.up", () => viewport.scrollBy(-1)],
+      ["pmd.down", () => viewport.scrollBy(1)],
+      ["pmd.pageUp", () => viewport.scrollPage(-1)],
+      ["pmd.pageDown", () => viewport.scrollPage(1)],
+      ["pmd.halfPageUp", () => viewport.scrollHalfPage(-1)],
+      ["pmd.halfPageDown", () => viewport.scrollHalfPage(1)],
+      ["pmd.top", () => viewport.scrollToTop()],
+      ["pmd.bottom", () => viewport.scrollToBottom()],
+    ];
+    return bindings.find(([id]) => pmdMatches(data, id))?.[1];
   }
 
-  private scrollPage(direction: 1 | -1): void {
-    if (this.viewport) {
-      this.viewport.scrollPage(direction);
-      return;
-    }
-    this.scrollBy(direction * Math.max(1, this.getContentHeight() - 2));
+  private sourceLineAtTop(): number {
+    const top = this.viewport.scrollTop;
+    const span = this.spans.slice(top).find((candidate) => candidate !== null);
+    return span?.startLine ?? top + 1;
   }
 
-  private scrollHalfPage(direction: 1 | -1): void {
-    if (this.viewport) {
-      this.viewport.scrollHalfPage(direction);
-      return;
-    }
-    this.scrollBy(
-      direction * Math.max(1, Math.floor(this.getContentHeight() / 2)),
-    );
-  }
-
-  private scrollToTop(): void {
-    if (this.viewport) {
-      this.viewport.scrollToTop();
-      return;
-    }
-    this.scrollOffset = 0;
-  }
-
-  private scrollToBottom(): void {
-    if (this.viewport) {
-      this.viewport.scrollToBottom();
-      return;
-    }
-    this.scrollOffset = Math.max(
-      0,
-      this.cachedLines.length - this.getContentHeight(),
-    );
-  }
-
-  private scrollToLine(line: number): void {
-    if (this.viewport) {
-      this.viewport.scrollToLine(line);
-      return;
-    }
-    const maxScroll = Math.max(
-      0,
-      this.cachedLines.length - this.getContentHeight(),
-    );
-    this.scrollOffset = Math.max(0, Math.min(maxScroll, line));
-  }
-
-  private findRenderedLineForSourceLine(sourceLine: number): number {
-    for (let index = 0; index < this.cachedSourceSpans.length; index++) {
-      const span = this.cachedSourceSpans[index];
-      if (!span) continue;
-      if (sourceLine >= span.startLine && sourceLine <= span.endLine) {
-        return index;
-      }
-    }
-
-    for (let index = 0; index < this.cachedSourceSpans.length; index++) {
-      const span = this.cachedSourceSpans[index];
-      if (!span) continue;
-      if (span.startLine >= sourceLine) return index;
-    }
-
-    return Math.max(0, sourceLine - 1);
-  }
-
-  private handleTocInput(data: string): void {
-    if (
-      pmdMatches(data, "pmd.common.cancel") ||
-      pmdMatches(data, "pmd.common.quit") ||
-      pmdMatches(data, "pmd.pager.toggleToc")
-    ) {
-      this.showingToc = false;
-      return;
-    }
-
-    if (this.tocEntries.length === 0) return;
-
-    if (pmdMatches(data, "pmd.common.up")) {
-      this.tocIndex = Math.max(0, this.tocIndex - 1);
-      return;
-    }
-
-    if (pmdMatches(data, "pmd.common.down")) {
-      this.tocIndex = Math.min(this.tocEntries.length - 1, this.tocIndex + 1);
-      return;
-    }
-
-    if (pmdMatches(data, "pmd.common.top")) {
-      this.tocIndex = 0;
-      return;
-    }
-
-    if (pmdMatches(data, "pmd.common.bottom")) {
-      this.tocIndex = this.tocEntries.length - 1;
-      return;
-    }
-
-    if (pmdMatches(data, "pmd.common.confirm")) {
-      const entry = this.tocEntries[this.tocIndex];
-      if (entry) {
-        this.scrollToLine(this.findRenderedLineForSourceLine(entry.line));
-      }
-      this.showingToc = false;
-    }
-  }
-
-  private handleSearchInput(data: string): void {
-    // Cancel search
-    if (pmdMatches(data, "pmd.common.cancel")) {
-      this.searchMode = false;
-      this.searchQuery = "";
-      this.searchMatches = [];
-      this.currentMatchIndex = -1;
-      return;
-    }
-
-    // Confirm search
-    if (pmdMatches(data, "pmd.common.confirm")) {
-      this.searchMode = false;
-      if (this.searchQuery.length > 0) {
-        this.performSearch();
-        this.goToNextMatch();
-      }
-      return;
-    }
-
-    // Backspace
-    if (pmdMatches(data, "pmd.common.backspace")) {
-      this.searchQuery = this.searchQuery.slice(0, -1);
-      return;
-    }
-
-    // Add printable characters to query
-    if (data.length === 1 && data >= " ") {
-      this.searchQuery += data;
-      return;
-    }
-  }
-
-  private performSearch(): void {
-    this.searchMatches = [];
-    this.currentMatchIndex = -1;
-
-    if (this.searchQuery.length === 0) {
-      return;
-    }
-
-    const queryLower = this.searchQuery.toLowerCase();
-    for (let i = 0; i < this.cachedLines.length; i++) {
-      const line = this.cachedLines[i];
-      if (line === undefined) continue;
-      const lineText = stripVTControlCharacters(line).toLowerCase();
-      if (lineText.includes(queryLower)) {
-        this.searchMatches.push(i);
-      }
-    }
-  }
-
-  private goToNextMatch(): void {
-    if (this.searchMatches.length === 0) {
-      return;
-    }
-
-    this.currentMatchIndex =
-      (this.currentMatchIndex + 1) % this.searchMatches.length;
-    this.scrollToMatch();
-  }
-
-  private goToPrevMatch(): void {
-    if (this.searchMatches.length === 0) {
-      return;
-    }
-
-    this.currentMatchIndex =
-      (this.currentMatchIndex - 1 + this.searchMatches.length) %
-      this.searchMatches.length;
-    this.scrollToMatch();
-  }
-
-  private scrollToMatch(): void {
-    if (this.currentMatchIndex < 0 || this.searchMatches.length === 0) {
-      return;
-    }
-
-    const matchLine = this.searchMatches[this.currentMatchIndex];
-    if (matchLine === undefined) {
-      return;
-    }
-
-    const contentHeight = this.getContentHeight();
-
-    // Scroll so the match is roughly in the middle of the viewport
-    const targetOffset = Math.max(0, matchLine - Math.floor(contentHeight / 2));
-    this.scrollToLine(targetOffset);
-  }
-
-  private highlightSearchTerms(line: string, isCurrent: boolean): string {
-    if (!this.searchQuery) return line;
-    const queryLower = this.searchQuery.toLowerCase();
-    const plain = stripVTControlCharacters(line);
-    const plainLower = plain.toLowerCase();
-
-    // Find all match positions in plain text
-    const positions: Array<{ start: number; end: number }> = [];
-    let pos = 0;
-    while (pos < plainLower.length) {
-      const idx = plainLower.indexOf(queryLower, pos);
-      if (idx === -1) break;
-      positions.push({ start: idx, end: idx + queryLower.length });
-      pos = idx + queryLower.length;
-    }
-    if (positions.length === 0) return line;
-
-    const highlightFn = isCurrent ? this.currentMatchColor : this.matchColor;
-
-    let result = "";
-    let plainIdx = 0;
-    let lineIdx = 0;
-    let posPtr = 0;
-
-    while (lineIdx < line.length) {
-      // Pass through ANSI escape sequences unchanged
-      const ansiMatch = extractAnsiCode(line, lineIdx);
-      if (ansiMatch) {
-        result += ansiMatch.code;
-        lineIdx += ansiMatch.length;
-        continue;
-      }
-
-      // At the start of a match: collect plain characters for this span,
-      // discarding any ANSI codes that fall inside it (the highlight replaces them).
-      const matchPosition = positions[posPtr];
-      if (matchPosition && plainIdx === matchPosition.start) {
-        const matchEnd = matchPosition.end;
-        let matchStr = "";
-        while (plainIdx < matchEnd && lineIdx < line.length) {
-          const skipped = extractAnsiCode(line, lineIdx);
-          if (skipped) {
-            lineIdx += skipped.length;
-            continue;
-          }
-          matchStr += line[lineIdx];
-          lineIdx++;
-          plainIdx++;
-        }
-        result += highlightFn(matchStr);
-        posPtr++;
-        continue;
-      }
-
-      // Regular character
-      result += line[lineIdx];
-      lineIdx++;
-      plainIdx++;
-    }
-
-    return result;
-  }
-
-  getScrollInfo(): { current: number; total: number; percent: number } {
-    if (this.viewport) {
-      return this.viewport.getScrollInfo();
-    }
-
-    const totalLines = this.cachedLines.length;
-    const contentHeight = this.getContentHeight();
-    const maxScroll = Math.max(1, totalLines - contentHeight);
-    const percent =
-      totalLines <= contentHeight
-        ? 100
-        : Math.round((this.scrollOffset / maxScroll) * 100);
-    return {
-      current: this.scrollOffset + 1,
-      total: totalLines,
-      percent,
+  private startSearch(): void {
+    const input = new Input({ prompt: "/" });
+    input.focused = true;
+    input.onSubmit = () => this.closeSearch();
+    input.onEscape = () => {
+      this.query = "";
+      this.updateMatches();
+      this.closeSearch();
     };
+    this.searchInput = input;
   }
 
-  isShowingHelp(): boolean {
-    return this.showingHelp;
+  private closeSearch(): void {
+    this.searchInput = null;
   }
 
-  isSearching(): boolean {
-    return this.searchMode;
+  private handleSearchInput(input: Input, data: string): void {
+    input.handleInput(data);
+    if (this.searchInput !== input) return;
+    const query = input.getValue();
+    if (query === this.query) return;
+    this.query = query;
+    this.updateMatches();
+    const top = this.viewport.scrollTop;
+    const first = this.matches.findIndex((line) => line >= top);
+    this.currentMatch = this.matches.length === 0 ? -1 : Math.max(0, first);
+    this.revealMatch();
   }
 
-  getSearchInfo(): { query: string; current: number; total: number } | null {
-    if (this.searchMatches.length === 0) {
-      return null;
-    }
-    return {
-      query: this.searchQuery,
-      current: this.currentMatchIndex + 1,
-      total: this.searchMatches.length,
-    };
+  private updateMatches(): void {
+    this.matches = this.query
+      ? this.lines.flatMap((line, index) =>
+          findMatches(line, this.query).length > 0 ? [index] : [],
+        )
+      : [];
+    this.currentMatch = Math.min(this.currentMatch, this.matches.length - 1);
+  }
+
+  private stepMatch(direction: 1 | -1): void {
+    if (this.matches.length === 0) return;
+    this.currentMatch =
+      (this.currentMatch + direction + this.matches.length) %
+      this.matches.length;
+    this.revealMatch();
+  }
+
+  private revealMatch(): void {
+    const line = this.matches[this.currentMatch];
+    if (line === undefined) return;
+    this.viewport.scrollToLine(
+      Math.max(0, line - Math.floor(this.viewport.viewportHeight / 2)),
+    );
   }
 }

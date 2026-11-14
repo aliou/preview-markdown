@@ -7,15 +7,14 @@ This project is an experiment in building a complete tool using AI coding agents
 ## Features
 
 - Directory browser: run `pmd` or `pmd <dir>` to browse and open markdown files
-- Syntax highlighting for fenced code blocks with boxed borders and language labels
+- Syntax highlighting for fenced code blocks, drawn as tinted blocks
 - Mermaid diagram support, rendered as Unicode box art
-- MDX support, with JSX stripped before rendering
-- Vim-style navigation (j/k, d/u, g/G, etc.)
-- Search with `/` and navigate matches with `n`/`N`
-- Edit file in `$EDITOR` with `e`, auto-reload on save
-- File watching for external changes
-- Light and dark mode (auto-detected or forced)
-- Configurable line numbers, themes, and wrapping width
+- MDX support, with JSX shown as code
+- Vim-style navigation (j/k, d/u, g/G, etc.) and a table of contents with `T`
+- Search as you type with `/` and jump between matches with `n`/`N`
+- Edit the file in `$EDITOR` at the current line with `e`, with a notice when the file changes on disk
+- Git status gutter for files in a Git worktree
+- Light and dark mode, detected from the terminal background or forced
 
 ## Installation
 

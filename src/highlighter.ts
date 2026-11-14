@@ -1,239 +1,84 @@
-import chalk from "chalk";
+import chalk, { type ChalkInstance } from "chalk";
 import {
   type BundledLanguage,
   bundledLanguages,
   createHighlighter,
   type Highlighter,
+  type ThemedToken,
 } from "shiki";
 import type { TextMateTheme } from "./theme";
 
-// Force chalk to always output colors (even when not TTY)
-chalk.level = 3;
-
-// Singleton highlighter instance
-let highlighter: Highlighter | null = null;
-
-// Currently loaded themes
-const loadedThemes: Set<string> = new Set();
-
-// Language aliases for common extensions
 const LANG_ALIASES: Record<string, string> = {
-  astro: "astro",
-  bash: "bash",
-  cjs: "javascript",
-  clj: "clojure",
-  diff: "diff",
   ex: "elixir",
   exs: "elixir",
-  fish: "fish",
-  graphql: "graphql",
-  hcl: "hcl",
   htm: "html",
-  hujson: "json",
-  justfile: "makefile",
-  js: "javascript",
-  jsonc: "json",
-  jsonl: "json",
-  jsx: "javascript",
-  md: "markdown",
-  mdx: "markdown",
-  mjs: "javascript",
-  mts: "typescript",
-  nu: "nu",
+  hujson: "jsonc",
   patch: "diff",
-  ps1: "powershell",
-  py: "python",
-  rb: "ruby",
-  rs: "rust",
-  sh: "bash",
-  tf: "hcl",
-  ts: "typescript",
-  tsx: "typescript",
-  yml: "yaml",
-  zsh: "bash",
 };
 
-function normalizeLang(lang: string): string {
+let highlighter: Highlighter | undefined;
+
+function resolveLanguage(lang: string): string {
   const lower = lang.toLowerCase();
-  return LANG_ALIASES[lower] || lower;
+  return LANG_ALIASES[lower] ?? lower;
 }
 
-// Common languages to pre-load for performance
-const COMMON_LANGS: BundledLanguage[] = [
-  "javascript",
-  "typescript",
-  "python",
-  "rust",
-  "go",
-  "java",
-  "c",
-  "cpp",
-  "csharp",
-  "bash",
-  "fish",
-  "powershell",
-  "json",
-  "yaml",
-  "toml",
-  "xml",
-  "html",
-  "css",
-  "scss",
-  "sass",
-  "less",
-  "markdown",
-  "nix",
-  "hcl",
-  "sql",
-  "ruby",
-  "php",
-  "swift",
-  "kotlin",
-  "diff",
-  "dockerfile",
-  "makefile",
-  "cmake",
-  "lua",
-  "perl",
-  "r",
-  "scala",
-  "clojure",
-  "elixir",
-  "erlang",
-  "haskell",
-  "ocaml",
-  "vim",
-  "graphql",
-  "protobuf",
-  "astro",
-  "nu",
-  "zig",
+function isBundledLanguage(lang: string): lang is BundledLanguage {
+  return Object.hasOwn(bundledLanguages, lang);
+}
+
+export async function loadHighlighting(
+  theme: TextMateTheme,
+  langs: Iterable<string>,
+): Promise<void> {
+  highlighter ??= await createHighlighter({ themes: [], langs: [] });
+  const shiki = highlighter;
+  if (!shiki.getLoadedThemes().includes(theme.name))
+    await shiki.loadTheme(theme);
+  const loaded = new Set(shiki.getLoadedLanguages());
+  const missing = new Set(
+    [...langs]
+      .map(resolveLanguage)
+      .filter((lang) => isBundledLanguage(lang) && !loaded.has(lang)),
+  );
+  if (missing.size > 0)
+    await shiki.loadLanguage(...[...missing].filter(isBundledLanguage));
+}
+
+const FONT_STYLES: ReadonlyArray<
+  [number, (style: ChalkInstance) => ChalkInstance]
+> = [
+  [1, (style) => style.italic],
+  [2, (style) => style.bold],
+  [4, (style) => style.underline],
+  [8, (style) => style.strikethrough],
 ];
 
-/**
- * Initialize the syntax highlighter with a theme.
- */
-export async function initSyntaxHighlighter(
-  theme: TextMateTheme,
-): Promise<void> {
-  if (!highlighter) {
-    highlighter = await createHighlighter({
-      themes: [theme],
-      langs: COMMON_LANGS,
-    });
-    loadedThemes.add(theme.name);
-  } else if (!loadedThemes.has(theme.name)) {
-    // Load additional theme into existing highlighter
-    await highlighter.loadTheme(theme);
-    loadedThemes.add(theme.name);
-  }
+function styleToken(token: ThemedToken): string {
+  const flags = token.fontStyle ?? 0;
+  const base = token.color ? chalk.hex(token.color.slice(0, 7)) : chalk;
+  const style = FONT_STYLES.reduce(
+    (current, [flag, apply]) => (flags & flag ? apply(current) : current),
+    base,
+  );
+  return style(token.content);
 }
 
-/**
- * Check if a language is supported by Shiki.
- */
-function isLanguageSupported(lang: string): boolean {
-  return lang in bundledLanguages;
-}
-
-/**
- * Load a language dynamically if not already loaded.
- */
-async function ensureLanguageLoaded(lang: string): Promise<boolean> {
-  if (!highlighter) return false;
-
-  const loadedLangs = highlighter.getLoadedLanguages();
-  if (loadedLangs.includes(lang as BundledLanguage)) {
-    return true;
-  }
-
-  if (isLanguageSupported(lang)) {
-    try {
-      await highlighter.loadLanguage(lang as BundledLanguage);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  return false;
-}
-
-/**
- * Highlight code and return ANSI-colored lines.
- */
-export function highlightCode(
-  code: string,
-  lang: string | undefined,
-  themeName: string,
-): string[] {
-  if (!highlighter) {
-    // Fallback if highlighter not initialized
-    return code.split("\n");
-  }
-
-  const normalizedLang = lang ? normalizeLang(lang) : undefined;
-
-  // Check if language is loaded, if not try to use plain text
-  const loadedLangs = highlighter.getLoadedLanguages();
-  const langToUse =
-    normalizedLang && loadedLangs.includes(normalizedLang as BundledLanguage)
-      ? (normalizedLang as BundledLanguage)
-      : ("text" as BundledLanguage);
-
-  try {
-    // Get tokens from Shiki
-    const { tokens } = highlighter.codeToTokens(code, {
-      lang: langToUse,
-      theme: themeName,
-    });
-
-    // Render tokens to ANSI
-    const lines: string[] = [];
-
-    for (const lineTokens of tokens) {
-      let line = "";
-      for (const token of lineTokens) {
-        const color = token.color;
-        if (color) {
-          line += chalk.hex(color)(token.content);
-        } else {
-          line += token.content;
-        }
-      }
-      lines.push(line);
-    }
-
-    return lines;
-  } catch {
-    // Fallback to plain text
-    return code.split("\n");
-  }
-}
-
-/**
- * Highlight code asynchronously, loading the language if needed.
- */
-export async function highlightCodeAsync(
-  code: string,
-  lang: string | undefined,
-  themeName: string,
-): Promise<string[]> {
-  const normalizedLang = lang ? normalizeLang(lang) : undefined;
-
-  // Try to load the language if not already loaded
-  if (normalizedLang) {
-    await ensureLanguageLoaded(normalizedLang);
-  }
-
-  return highlightCode(code, lang, themeName);
-}
-
-/**
- * Create a highlightCode function for use with Markdown theme.
- */
-export function createHighlightCodeFn(
+export function createCodeHighlighter(
   themeName: string,
 ): (code: string, lang?: string) => string[] {
-  return (code: string, lang?: string) => highlightCode(code, lang, themeName);
+  return (code, lang) => {
+    const resolved = lang ? resolveLanguage(lang) : "";
+    if (
+      !isBundledLanguage(resolved) ||
+      !highlighter?.getLoadedLanguages().includes(resolved)
+    ) {
+      return code.split("\n");
+    }
+    const { tokens } = highlighter.codeToTokens(code, {
+      lang: resolved,
+      theme: themeName,
+    });
+    return tokens.map((line) => line.map(styleToken).join(""));
+  };
 }

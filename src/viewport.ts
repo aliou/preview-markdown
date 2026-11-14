@@ -1,11 +1,5 @@
 import type { ScrollView } from "@earendil-works/pi-tui";
 
-export interface ScrollInfo {
-  current: number;
-  total: number;
-  percent: number;
-}
-
 export class ViewportController {
   private lineCount = 0;
   private fallbackViewportHeight = 0;
@@ -54,10 +48,6 @@ export class ViewportController {
     this.scrollView.scrollTo(Math.max(0, line));
   }
 
-  ensureLineVisible(line: number): void {
-    this.ensureRangeVisible(line, line);
-  }
-
   ensureRangeVisible(
     firstLine: number,
     lastLine: number,
@@ -82,19 +72,11 @@ export class ViewportController {
     this.scrollView.scrollToStart();
   }
 
-  getScrollInfo(): ScrollInfo {
+  scrollPercent(): number {
     const total = this.lineCount;
     const viewportHeight = this.viewportHeight;
+    if (total <= viewportHeight) return 100;
     const maxScroll = Math.max(1, total - viewportHeight);
-    const percent =
-      total <= viewportHeight
-        ? 100
-        : Math.round((this.scrollView.scrollTop / maxScroll) * 100);
-
-    return {
-      current: this.scrollView.scrollTop + 1,
-      total,
-      percent,
-    };
+    return Math.round((this.scrollView.scrollTop / maxScroll) * 100);
   }
 }

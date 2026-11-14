@@ -1,83 +1,41 @@
 import { spawnSync } from "node:child_process";
+import * as path from "node:path";
 
-/**
- * Open a file in the user's preferred editor.
- * Uses $VISUAL, $EDITOR, or falls back to common editors.
- */
-export function openInEditor(filePath: string, lineNumber: number): boolean {
-  const editor = process.env.VISUAL || process.env.EDITOR || findEditor();
-
-  if (!editor) {
-    return false;
-  }
-
-  // Build command with line number support for common editors
-  const args = buildEditorArgs(editor, filePath, lineNumber);
-
-  try {
-    const result = spawnSync(editor, args, {
-      stdio: "inherit",
-      shell: false,
-    });
-    return result.status === 0;
-  } catch {
-    return false;
-  }
-}
-
-function findEditor(): string | null {
-  // Try common editors in order of preference
-  const editors = ["vim", "nvim", "nano", "vi"];
-
-  for (const editor of editors) {
-    const result = spawnSync("which", [editor], { stdio: "pipe" });
-    if (result.status === 0) {
-      return editor;
-    }
-  }
-
-  return null;
-}
-
-function buildEditorArgs(
-  editor: string,
-  filePath: string,
-  lineNumber: number,
-): string[] {
-  const editorName = editor.split("/").pop() || editor;
-
-  // Handle different editors' line number syntax
-  switch (editorName) {
+function lineArguments(program: string, file: string, line: number): string[] {
+  switch (path.basename(program)) {
+    case "vi":
     case "vim":
     case "nvim":
-    case "vi":
-      return [`+${lineNumber}`, filePath];
-
     case "nano":
-      return [`+${lineNumber}`, filePath];
-
     case "emacs":
     case "emacsclient":
-      return [`+${lineNumber}`, filePath];
-
+    case "kak":
+    case "micro":
+      return [`+${line}`, file];
     case "code":
     case "code-insiders":
-      // VS Code uses -g file:line format and --wait to block
-      return ["-g", `${filePath}:${lineNumber}`, "--wait"];
-
+    case "cursor":
+      return ["--wait", "--goto", `${file}:${line}`];
     case "subl":
-    case "sublime":
-      return [`${filePath}:${lineNumber}`];
-
-    case "atom":
-      return [`${filePath}:${lineNumber}`];
-
     case "hx":
-    case "helix":
-      return [`${filePath}:${lineNumber}`];
-
+    case "zed":
+      return [`${file}:${line}`];
     default:
-      // Default: just pass the file, no line number
-      return [filePath];
+      return [file];
   }
+}
+
+export function openInEditor(file: string, line: number): string | null {
+  const command = process.env.VISUAL || process.env.EDITOR || "vi";
+  const [program = "vi", ...args] = command.trim().split(/\s+/);
+  const result = spawnSync(
+    program,
+    [...args, ...lineArguments(program, file, line)],
+    { stdio: "inherit" },
+  );
+  if (result.error)
+    return `cannot run editor "${program}": ${result.error.message}; set $EDITOR`;
+  return result.status === 0
+    ? null
+    : `editor "${program}" exited with status ${result.status}`;
 }

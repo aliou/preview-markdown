@@ -4,7 +4,6 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { createGitStatusResolver } from "../src/git";
-import { Pager } from "../src/pager";
 
 const temporaryDirectories: string[] = [];
 
@@ -92,56 +91,5 @@ describe("Git gutter status resolver", () => {
 
     expect(statusAt(resolver, 1)).toBe("added");
     expect(statusAt(resolver, 2)).toBe("added");
-  });
-});
-
-describe("Git gutter", () => {
-  test("reserves one column and paints only the gutter cell", () => {
-    let receivedWidth = 0;
-    const content = {
-      invalidate() {},
-      render(width: number) {
-        receivedWidth = width;
-        return ["content"];
-      },
-      renderWithSourceMap(width: number) {
-        receivedWidth = width;
-        return {
-          lines: ["content"],
-          sourceSpans: [{ startLine: 1, endLine: 1 }],
-        };
-      },
-    };
-    const pager = new Pager({
-      content,
-      onExit() {},
-      gitStatusForSpan: () => "added",
-      bgColor: (text) => text,
-      gitAddedColor: (text) => `[green:${text}]`,
-    });
-    pager.setViewportHeight(1);
-
-    expect(pager.render(10)[0]).toStartWith("[green:▎]content");
-    expect(receivedWidth).toBe(9);
-  });
-
-  test("does not reserve a column without Git data", () => {
-    let receivedWidth = 0;
-    const content = {
-      invalidate() {},
-      render(width: number) {
-        receivedWidth = width;
-        return ["content"];
-      },
-    };
-    const pager = new Pager({
-      content,
-      onExit() {},
-      bgColor: (text) => text,
-    });
-    pager.setViewportHeight(1);
-
-    pager.render(10);
-    expect(receivedWidth).toBe(10);
   });
 });

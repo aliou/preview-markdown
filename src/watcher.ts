@@ -1,54 +1,11 @@
 import * as fs from "node:fs";
 
-export interface FileWatcher {
-  start(): void;
-  stop(): void;
-}
+const POLL_INTERVAL_MS = 300;
 
-/**
- * Watch a file for changes and call the callback when it changes.
- * Uses Node.js fs.watch which works on most platforms.
- */
-export function watchFile(filePath: string, onChange: () => void): FileWatcher {
-  let watcher: fs.FSWatcher | null = null;
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-
-  const handleChange = (eventType: string) => {
-    // Only handle 'change' events, not 'rename'
-    if (eventType !== "change") {
-      return;
-    }
-
-    // Debounce to avoid multiple rapid callbacks
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-    }
-    debounceTimer = setTimeout(() => {
-      debounceTimer = null;
-      onChange();
-    }, 100);
+export function watchFile(file: string, onChange: () => void): () => void {
+  const listener = (current: fs.Stats, previous: fs.Stats): void => {
+    if (current.mtimeMs !== previous.mtimeMs) onChange();
   };
-
-  return {
-    start() {
-      if (watcher) {
-        return;
-      }
-      try {
-        watcher = fs.watch(filePath, handleChange);
-      } catch {
-        return;
-      }
-    },
-    stop() {
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
-        debounceTimer = null;
-      }
-      if (watcher) {
-        watcher.close();
-        watcher = null;
-      }
-    },
-  };
+  fs.watchFile(file, { interval: POLL_INTERVAL_MS }, listener);
+  return () => fs.unwatchFile(file, listener);
 }

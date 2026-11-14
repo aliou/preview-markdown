@@ -18,7 +18,7 @@ export function createPreparedMarkdown(content: string): PreparedMarkdown {
   return { content, lineMap };
 }
 
-export function splitLines(content: string): string[] {
+function splitLines(content: string): string[] {
   return content.split(/\r?\n/);
 }
 
