@@ -16,6 +16,7 @@
     "build": "bun run scripts/build.ts",
     "changeset": "changeset",
     "version": "bun run scripts/version.ts",
+    "schema": "bun run scripts/schema.ts && biome format --write schema.json",
     "test": "bun test"
   },
   "devDependencies": {
@@ -30,6 +31,7 @@
     "@earendil-works/pi-tui": "^1.5.2",
     "chalk": "^6.0.1",
     "lovely-mermaid": "^0.3.3",
-    "shiki": "^4.6.0"
+    "shiki": "^4.6.0",
+    "zod": "^4.6.7"
   }
 }

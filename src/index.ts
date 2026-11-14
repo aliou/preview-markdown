@@ -17,7 +17,7 @@ import chalk from "chalk";
 import { Browser, type Entry, scanDirectory } from "./browser";
 import { parseArgs, printCompletion, printHelp, printVersion } from "./cli";
 import { type ColorScheme, detectColorScheme } from "./color-scheme";
-import { getThemeName, loadConfig, saveDefaultConfig } from "./config";
+import { initConfig, loadConfig, themeNameFor } from "./config";
 import { type DocumentStyles, MarkdownDocument } from "./document";
 import { openInEditor } from "./editor";
 import { createGitStatusResolver, type GitStatusResolver } from "./git";
@@ -216,7 +216,7 @@ async function main(): Promise<void> {
   }
 
   if (options.initConfig) {
-    const configPath = saveDefaultConfig();
+    const configPath = initConfig(false);
     console.log(`Config file created at: ${configPath}`);
     process.exit(0);
   }
@@ -279,7 +279,7 @@ async function main(): Promise<void> {
   }
 
   let currentTheme = resolveTheme(
-    getThemeName(config, currentColorScheme === "dark"),
+    themeNameFor(config, currentColorScheme),
     currentColorScheme === "dark",
   );
 
@@ -384,7 +384,7 @@ async function main(): Promise<void> {
 
     currentColorScheme = newScheme;
     const isDark = newScheme === "dark";
-    currentTheme = resolveTheme(getThemeName(config, isDark), isDark);
+    currentTheme = resolveTheme(themeNameFor(config, newScheme), isDark);
     await initSyntaxHighlighter(currentTheme.textmate);
 
     highlightCode = createHighlightCodeFn(currentTheme.name);

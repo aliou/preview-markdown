@@ -2,46 +2,48 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/aliou/preview-markdown/main/schema.json",
   "title": "pmd configuration",
-  "description": "Configuration file for pmd (preview-markdown)",
   "type": "object",
   "properties": {
     "$schema": {
+      "description": "JSON Schema URL for editor validation",
       "type": "string",
-      "format": "uri",
-      "description": "JSON Schema URL for editor validation"
+      "format": "uri"
     },
     "showLineNumbers": {
-      "type": "boolean",
+      "default": false,
       "description": "Show line numbers in the pager",
-      "default": false
+      "type": "boolean"
     },
     "theme": {
-      "description": "Theme configuration - either a single theme name or separate dark/light themes",
-      "oneOf": [
+      "default": {
+        "dark": "senzu-dark",
+        "light": "senzu-light"
+      },
+      "description": "A bundled theme name, or the name of a TextMate theme file in the themes directory next to the global config",
+      "anyOf": [
         {
           "type": "string",
           "description": "Theme name to use for both light and dark mode"
         },
         {
           "type": "object",
-          "description": "Separate themes for dark and light mode",
           "properties": {
             "dark": {
               "type": "string",
-              "description": "Theme name for dark mode",
-              "default": "senzu-dark"
+              "description": "Theme name for dark mode"
             },
             "light": {
               "type": "string",
-              "description": "Theme name for light mode",
-              "default": "senzu-light"
+              "description": "Theme name for light mode"
             }
           },
           "required": ["dark", "light"],
-          "additionalProperties": false
+          "additionalProperties": false,
+          "description": "Separate themes for dark and light mode"
         }
       ]
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "description": "Configuration file for pmd (preview-markdown)"
 }

@@ -1,112 +1,108 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { z } from "zod";
+import type { ColorScheme } from "./color-scheme";
 import { APP_NAME, LOCAL_CONFIG_FILE } from "./constants";
+import { FailedError } from "./failed-error";
 
-/**
- * Theme configuration - either a single theme name or dark/light pair
- */
-export type ThemeConfig = string | { dark: string; light: string };
-
-/**
- * Application configuration
- */
-export interface Config {
-  showLineNumbers?: boolean;
-  theme?: ThemeConfig;
-}
-
-const SCHEMA_URL =
+export const SCHEMA_URL =
   "https://raw.githubusercontent.com/aliou/preview-markdown/main/schema.json";
 
-const defaultConfig: Config = {
-  showLineNumbers: false,
-  theme: {
-    dark: "senzu-dark",
-    light: "senzu-light",
-  },
-};
+export const configSchema = z
+  .strictObject({
+    $schema: z
+      .url()
+      .optional()
+      .describe("JSON Schema URL for editor validation"),
+    showLineNumbers: z
+      .boolean()
+      .default(false)
+      .describe("Show line numbers in the pager"),
+    theme: z
+      .union([
+        z.string().describe("Theme name to use for both light and dark mode"),
+        z
+          .strictObject({
+            dark: z.string().describe("Theme name for dark mode"),
+            light: z.string().describe("Theme name for light mode"),
+          })
+          .describe("Separate themes for dark and light mode"),
+      ])
+      .default({ dark: "senzu-dark", light: "senzu-light" })
+      .describe(
+        "A bundled theme name, or the name of a TextMate theme file in the themes directory next to the global config",
+      ),
+  })
+  .describe("Configuration file for pmd (preview-markdown)");
 
-function getGlobalConfigDir(): string {
-  const xdgConfig = process.env.XDG_CONFIG_HOME;
-  if (xdgConfig) {
-    return path.join(xdgConfig, APP_NAME);
-  }
-  return path.join(os.homedir(), ".config", APP_NAME);
+export type Config = z.infer<typeof configSchema>;
+
+export function configDirectory(): string {
+  const base =
+    process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
+  return path.join(base, APP_NAME);
 }
 
-function getGlobalConfigPath(): string {
-  return path.join(getGlobalConfigDir(), "config.json");
+function globalConfigPath(): string {
+  return path.join(configDirectory(), "config.json");
 }
 
-function getLocalConfigPath(): string {
-  return path.join(process.cwd(), LOCAL_CONFIG_FILE);
-}
-
-function loadConfigFromPath(configPath: string): Config | null {
-  try {
-    if (fs.existsSync(configPath)) {
-      const content = fs.readFileSync(configPath, "utf8");
-      const userConfig = JSON.parse(content) as Partial<Config>;
-      return {
-        showLineNumbers:
-          userConfig.showLineNumbers ?? defaultConfig.showLineNumbers,
-        theme: userConfig.theme ?? defaultConfig.theme,
-      };
-    }
-  } catch {
-    return null;
-  }
-  return null;
+export function activeConfigPath(): string {
+  const local = path.resolve(LOCAL_CONFIG_FILE);
+  return fs.existsSync(local) ? local : globalConfigPath();
 }
 
 export function loadConfig(): Config {
-  // Check local config first
-  const localConfig = loadConfigFromPath(getLocalConfigPath());
-  if (localConfig) {
-    return localConfig;
-  }
+  const file = activeConfigPath();
+  if (!fs.existsSync(file)) return configSchema.parse({});
 
-  // Fall back to global config
-  const globalConfig = loadConfigFromPath(getGlobalConfigPath());
-  if (globalConfig) {
-    return globalConfig;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    throw new FailedError(
+      `cannot read config ${file}: ${(error as Error).message}`,
+    );
   }
-
-  return defaultConfig;
+  const result = configSchema.safeParse(raw);
+  if (!result.success) {
+    throw new FailedError(
+      `invalid config ${file}:\n${z.prettifyError(result.error)}`,
+    );
+  }
+  return result.data;
 }
 
-export function saveDefaultConfig(): string {
-  const configDir = getGlobalConfigDir();
-  const configPath = getGlobalConfigPath();
+export function initConfig(force: boolean): string {
+  const file = globalConfigPath();
+  if (fs.existsSync(file) && !force) {
+    throw new FailedError(
+      `${file} already exists; pass --force to overwrite it`,
+    );
+  }
+  const { showLineNumbers, theme } = configSchema.parse({});
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(
+    file,
+    `${JSON.stringify({ $schema: SCHEMA_URL, showLineNumbers, theme }, null, 2)}\n`,
+  );
+  return file;
+}
 
-  const configWithSchema = {
-    $schema: SCHEMA_URL,
-    ...defaultConfig,
+export function themeNameFor(config: Config, scheme: ColorScheme): string {
+  return typeof config.theme === "string" ? config.theme : config.theme[scheme];
+}
+
+export function configSchemaJson(): Record<string, unknown> {
+  const schema = z.toJSONSchema(configSchema, {
+    target: "draft-07",
+    io: "input",
+  });
+  return {
+    $schema: schema.$schema,
+    $id: SCHEMA_URL,
+    title: "pmd configuration",
+    ...schema,
   };
-
-  fs.mkdirSync(configDir, { recursive: true });
-  fs.writeFileSync(configPath, JSON.stringify(configWithSchema, null, 2));
-
-  return configPath;
-}
-
-/**
- * Get the theme name for a given color scheme from config
- */
-export function getThemeName(
-  config: Config,
-  isDark: boolean,
-): string | undefined {
-  if (!config.theme) {
-    return undefined;
-  }
-
-  if (typeof config.theme === "string") {
-    // Single theme for both modes
-    return config.theme;
-  }
-
-  // Dark/light pair
-  return isDark ? config.theme.dark : config.theme.light;
 }
