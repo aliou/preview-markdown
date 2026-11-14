@@ -8,6 +8,7 @@ Terminal markdown pager and directory browser, written in TypeScript for Node.js
 - `pnpm lint`, `pnpm typecheck`, and `pnpm test` must pass before committing. Lefthook runs the formatter and type check on commit.
 - `pnpm schema` regenerates `schema.json` from the zod config schema in `src/config.ts`; a test fails when they drift.
 - `pnpm build` compiles the binary for the current platform into `dist/`. CI builds each release binary on its own platform (`.github/workflows/build.yml`).
+- The `pnpmDeps` hash in `flake.nix` must match `pnpm-lock.yaml`. CI commits the new hash to pull request branches from this repository; elsewhere, run `scripts/update-pnpm-deps-hash.sh` (needs Nix).
 
 ## Conventions
 

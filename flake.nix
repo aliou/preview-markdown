@@ -29,43 +29,52 @@
       };
 
       # Build from source for development
-      buildFromSource = pkgs: pkgs.stdenv.mkDerivation {
-        pname = "pmd";
-        inherit version;
+      buildFromSource = pkgs:
+        let
+          nodejs = pkgs.nodejs_26;
+          pnpm = pkgs.pnpm_12;
+        in
+        pkgs.stdenv.mkDerivation (finalAttrs: {
+          pname = "pmd";
+          inherit version;
 
-        src = ./.;
+          src = ./.;
 
-        nativeBuildInputs = [ pkgs.bun pkgs.makeWrapper ];
+          nativeBuildInputs = [ nodejs pnpm pkgs.pnpmConfigHook pkgs.makeWrapper ];
 
-        buildPhase = ''
-          export HOME=$(mktemp -d)
-          bun install --frozen-lockfile
-        '';
+          postPatch = ''
+            sed -i '/^permissions:/,/^[^ ]/{/^permissions:/d;/^ /d}' pnpm-workspace.yaml
+          '';
 
-        installPhase = ''
-          mkdir -p $out/lib/pmd
-          cp -r node_modules $out/lib/pmd/
-          cp -r src $out/lib/pmd/
-          cp package.json $out/lib/pmd/
+          pnpmDeps = pkgs.fetchPnpmDeps {
+            inherit (finalAttrs) pname version src postPatch;
+            inherit pnpm;
+            fetcherVersion = 5;
+            hash = "sha256-+UTnmqoMPgZM9tCwLowuhxCdjgPDGIS1yRPpR3GAKSc=";
+          };
 
-          mkdir -p $out/bin
-          cat > $out/bin/pmd << 'EOF'
-          #!/usr/bin/env bash
-          exec ${pkgs.bun}/bin/bun run "$out/lib/pmd/src/index.ts" "$@"
-          EOF
-          chmod +x $out/bin/pmd
+          buildPhase = ''
+            runHook preBuild
+            pnpm exec tsdown --no-exe
+            runHook postBuild
+          '';
 
-          substituteInPlace $out/bin/pmd --replace '$out' "$out"
-        '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/lib/pmd
+            cp -r dist/. $out/lib/pmd/
+            makeWrapper ${nodejs}/bin/node $out/bin/pmd --add-flags $out/lib/pmd/index.mjs
+            runHook postInstall
+          '';
 
-        meta = with pkgs.lib; {
-          description = "Terminal markdown pager with syntax highlighting";
-          homepage = "https://github.com/aliou/preview-markdown";
-          license = licenses.mit;
-          platforms = platforms.all;
-          mainProgram = "pmd";
-        };
-      };
+          meta = with pkgs.lib; {
+            description = "Terminal markdown pager with syntax highlighting";
+            homepage = "https://github.com/aliou/preview-markdown";
+            license = licenses.mit;
+            platforms = platforms.all;
+            mainProgram = "pmd";
+          };
+        });
 
       # Fetch prebuilt binary from release
       fetchBinary = pkgs: system:
@@ -125,7 +134,7 @@
 
         devShells.default = pkgs.mkShell {
           shellHook = installLefthook;
-          buildInputs = [ pkgs.bun pkgs.lefthook ];
+          buildInputs = [ pkgs.nodejs_26 pkgs.pnpm_12 pkgs.lefthook ];
         };
       }
     ) // {

@@ -6,7 +6,8 @@
 
 pkgs.mkShell {
   buildInputs = with pkgs; [
-    bun
+    nodejs_26
+    pnpm_12
     lefthook
   ];
 
